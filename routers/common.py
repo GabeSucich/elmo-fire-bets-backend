@@ -24,6 +24,7 @@ from models import (
     Parlay,
     User,
     GamblingSeason,
+    GamblingSeasonState,
     Gambler,
     ParlayState,
     ParlayResult
@@ -103,6 +104,8 @@ class PickResponseData(BaseModel):
 
     @classmethod
     def from_model(cls, model: Pick):
+        vetoes = [veto for veto in model.vetoes if veto.approval_status != VetoApprovalStatus.UNDECIDED]
+        veto = None if len(vetoes) == 0 else vetoes[0]
         return cls(
             id=model.id,
             gambler_id=model.gambler_id,
@@ -112,7 +115,7 @@ class PickResponseData(BaseModel):
             sauce_factor=model.sauce_factor,
             result=model.result,
             prop_type=model.prop_type,
-            veto=PickVetoResponseData.from_model(model.veto) if (model.veto and model.veto.approval_status != VetoApprovalStatus.UNDECIDED) else None,
+            veto=PickVetoResponseData.from_model(veto) if veto else None,
             prop_bet_target=PropBetTargetResponseData.from_model(model.prop_bet_target)
         )
 
@@ -204,9 +207,7 @@ async def check_user_access_to_parlay(user: User, parlay_or_id: int | Parlay, db
     else:
         parlay = parlay_or_id
     if not any([gambler.user_id == user.id for gambler in parlay.gambling_season.gamblers]):
-        return HTTPException(status_code=403, detail="User does not have permission to create a pick for this parlay")
-
-    return None
+        raise HTTPException(status_code=403, detail="User does not have permission to create a pick for this parlay")
 
 async def check_gambler_access_to_season(gambler_id: int, gambling_season_id: int, db: AsyncSession):
     gambling_season = (await db.execute(
@@ -215,7 +216,7 @@ async def check_gambler_access_to_season(gambler_id: int, gambling_season_id: in
     )).scalar_one()
 
     if not any([g.id == gambler_id for g in gambling_season.gamblers]):
-        return HTTPException(status_code=403, detail="Gambler does not have access to this season!")
+        raise HTTPException(status_code=403, detail="Gambler does not have access to this season!")
 
 
 async def check_user_is_gambler(user: User, gambler_id: int, db: AsyncSession):
@@ -224,14 +225,21 @@ async def check_user_is_gambler(user: User, gambler_id: int, db: AsyncSession):
     )).scalars().all()
 
     if not any([g.id == gambler_id for g in gamblers]):
-        return HTTPException(status_code=403, detail="User cannot make a request on behalf of that gambler!")
+        raise HTTPException(status_code=403, detail="User cannot make a request on behalf of that gambler!")
 
-    return None
+
+async def check_season_in_progress(gambling_season_id: int, db: AsyncSession):
+    season = (await db.execute(
+        select(GamblingSeason).where(GamblingSeason.id == gambling_season_id)
+    )).scalar_one()
+    if season.state != GamblingSeasonState.IN_PROGRESS:
+        raise HTTPException(status_code=403, detail="Cannot make changes to a season that is not in progress!")
+
 
 def add_selects_to_parlay_query(select: Select[Tuple[Parlay]]):
     return select.options(
             selectinload(Parlay.picks)
-            .selectinload(Pick.veto)
+            .selectinload(Pick.vetoes)
             .selectinload(PickVeto.votes)
         ).options(
             selectinload(Parlay.picks)
@@ -269,7 +277,7 @@ async def query_pick_with_selects(pick_id: int, db: AsyncSession):
     return await db.execute(
         select(Pick).where(Pick.id == pick_id)
         .options(
-            selectinload(Pick.veto)
+            selectinload(Pick.vetoes)
             .selectinload(PickVeto.votes)
         ).options(
             selectinload(Pick.prop_bet_target)

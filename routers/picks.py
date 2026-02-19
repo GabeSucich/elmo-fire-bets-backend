@@ -22,12 +22,13 @@ from models import (
 
 from .auth import manager
 from .common import (
-    PickResponseData,  
-    PropBetTargetRequestData, 
+    PickResponseData,
+    PropBetTargetRequestData,
     get_or_create_prop_bet_target,
-    map_pick_result_to_veto_result, 
+    map_pick_result_to_veto_result,
     query_pick_with_selects,
     check_user_access_to_parlay,
+    check_season_in_progress,
     query_parlay_with_selects
 )
 
@@ -65,13 +66,13 @@ async def create_pick(
     
     parlay = (await query_parlay_with_selects(body.parlay_id, db)).scalar_one()
 
+    await check_season_in_progress(parlay.gambling_season_id, db)
+
     if not user_can_edit_picks(parlay, user):
-        return HTTPException(status_code=500, detail="After a parlay has been locked in, only the owner can change picks!")
-    
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+        raise HTTPException(status_code=500, detail="After a parlay has been locked in, only the owner can change picks!")
+
+    await check_user_access_to_parlay(user, parlay, db)
+
     target = await get_or_create_prop_bet_target(body.target, db)
 
     pick = Pick(
@@ -114,15 +115,15 @@ async def update_pick(
     pick = (await query_pick_with_selects(pick_id, db)).scalar_one()
     parlay = (await query_parlay_with_selects(pick.parlay_id, db)).scalar_one()
 
-    if not user_can_edit_picks(parlay, user):
-        return HTTPException(status_code=500, detail="After a parlay has been locked, only the owner can edit picks!")
+    await check_season_in_progress(parlay.gambling_season_id, db)
 
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+    if not user_can_edit_picks(parlay, user):
+        raise HTTPException(status_code=500, detail="After a parlay has been locked, only the owner can edit picks!")
+
+    await check_user_access_to_parlay(user, parlay, db)
+
     if pick.corrected_line:
-        return HTTPException(status_code=500, detail="Cannot update a pick after an override has been applied!")
+        raise HTTPException(status_code=500, detail="Cannot update a pick after an override has been applied!")
 
     target_id = (await get_or_create_prop_bet_target(body.target, db)).id if body.target else None
     delete_veto = False
@@ -140,8 +141,9 @@ async def update_pick(
         pick.prop_type = body.prop_type
         delete_veto = True
     
-    if delete_veto and pick.veto:
-        await db.delete(pick.veto)
+    if delete_veto:
+        for veto in pick.vetoes:
+            await db.delete(veto)
     
     await db.commit()
     await db.refresh(pick)
@@ -168,12 +170,11 @@ async def apply_pick_override(
     pick = (await query_pick_with_selects(pick_id, db)).scalar_one()
     parlay = (await query_parlay_with_selects(pick.parlay_id, db)).scalar_one()
 
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+    await check_season_in_progress(parlay.gambling_season_id, db)
+    await check_user_access_to_parlay(user, parlay, db)
+
     if not user_can_override_picks(parlay, user):
-            return HTTPException(status_code=500, detail="Only the parlay owner can override picks!")
+            raise HTTPException(status_code=500, detail="Only the parlay owner can override picks!")
     
     if body.target:
         pick.prop_bet_target_id = (await get_or_create_prop_bet_target(body.target, db)).id
@@ -185,8 +186,9 @@ async def apply_pick_override(
         pick.corrected_line = body.line
     if body.sauce_factor:
         pick.sauce_factor = body.sauce_factor
-    if body.delete_veto and pick.veto:
-        await db.delete(pick.veto)
+    if body.delete_veto:
+        for veto in pick.vetoes:
+            await db.delete(veto)
     
     await db.commit()
     pick = (await query_pick_with_selects(pick.id, db)).scalar_one()
@@ -217,21 +219,21 @@ async def update_pick_result(
     pick = (await query_pick_with_selects(pick_id, db)).scalar_one()
     parlay = (await query_parlay_with_selects(pick.parlay_id, db)).scalar_one()
 
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+    await check_season_in_progress(parlay.gambling_season_id, db)
+    await check_user_access_to_parlay(user, parlay, db)
+
     if parlay.state == ParlayState.BUILDING:
-        return HTTPException(status_code=500, detail="Cannot only update pick results while a parlay is open!")
+        raise HTTPException(status_code=500, detail="Cannot only update pick results while a parlay is open!")
      
     elif parlay.state == ParlayState.CLOSED and parlay.owner.user_id != user.id:
-        return HTTPException(status_code=500, detail="Only the user can update results after a parlay has been closed!")
+        raise HTTPException(status_code=500, detail="Only the user can update results after a parlay has been closed!")
 
 
     mapped_result = PickResult(body.result.value)
     pick.result = mapped_result
-    if pick.veto and pick.veto.approval_status == VetoApprovalStatus.APPROVED:
-        pick.veto.result = map_pick_result_to_veto_result(mapped_result)
+    for veto in pick.vetoes:
+        if veto.approval_status == VetoApprovalStatus.APPROVED:
+            veto.result = map_pick_result_to_veto_result(mapped_result)
     
     await db.commit()
     pick = (await query_pick_with_selects(pick_id, db)).scalar_one()

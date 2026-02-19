@@ -66,7 +66,7 @@ class Pick(Base):
     result: Mapped[PickResult | None] = mapped_column(SQLEnum(PickResult), nullable=True, default=None)
 
     gambler: Mapped["Gambler"] = relationship(back_populates="picks")
-    veto: Mapped["PickVeto | None"] = relationship(back_populates="pick", cascade="all, delete-orphan")
+    vetoes: Mapped[list["PickVeto"]] = relationship(back_populates="pick", cascade="all, delete-orphan")
     parlay: Mapped["Parlay"] = relationship(back_populates="picks")
     prop_bet_target: Mapped["PropBetTarget"] = relationship(back_populates="picks")
 
@@ -79,7 +79,7 @@ class PickVeto(Base):
     result: Mapped[VetoResult | None] = mapped_column(SQLEnum(VetoResult), nullable=True, default=None)
 
     gambler: Mapped[Gambler] = relationship(back_populates="vetoes")
-    pick: Mapped["Pick"] = relationship(back_populates="veto")
+    pick: Mapped["Pick"] = relationship(back_populates="vetoes")
     votes: Mapped[list["VetoVote"]] = relationship(back_populates="veto", cascade="all, delete-orphan")
 
 class VetoVote(Base):

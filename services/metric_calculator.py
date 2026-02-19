@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from types import UnionType
+from typing import Union
 
 from pydantic import BaseModel
 
@@ -133,6 +135,23 @@ class BetTypeMetrics(BaseModel):
 
     
 
+class PropTargetMetrics(BaseModel):
+    prop_targets: dict[int, PropBetTypeMetrics]
+    target_names: dict[int, str]
+
+    @classmethod
+    def from_counter(cls, counter: MetricCounter, target_names: dict[int, str]):
+        if counter.prop_targets is None:
+            return cls(prop_targets={}, target_names={})
+        return cls(
+            prop_targets={
+                target_id: PropBetTypeMetrics.from_counter(target_counter)
+                for target_id, target_counter in counter.prop_targets.items()
+            },
+            target_names=target_names
+        )
+
+
 class GamblerBaseMetrics(BaseModel):
     overall: SetMetrics
     TD: SetMetrics
@@ -141,18 +160,22 @@ class GamblerBaseMetrics(BaseModel):
     direction: DirectionMetrics
     veto_metrics: SetVetoMetrics
 
-class GamblerMetricsWithBetTypes(GamblerBaseMetrics):
+class GamblerAdvancedMetrics(GamblerBaseMetrics):
     bet_types: BetTypeMetrics
+    prop_target_metrics: PropTargetMetrics
 
 class GamblerMetricsCalculator:
     def __init__(self) -> None:
         self.mc = MetricCounter()
         self._pv_pairs: list[PickVetoPair] = []
-        self.metrics: GamblerBaseMetrics | None = None
+        self._target_names: dict[int, str] = {}
 
     def process_pv_pair(self, pv_pair: PickVetoPair):
         self.mc.process_pv_pair(pv_pair)
         self._pv_pairs.append(pv_pair)
+        target_id = pv_pair.get_prop_target_id()
+        if target_id not in self._target_names:
+            self._target_names[target_id] = pv_pair.get_prop_target_display_name()
     
     @classmethod
     def calculator_from_parlays(cls, gambler_id: int, parlays: list[Parlay]):
@@ -193,8 +216,8 @@ class GamblerMetricsCalculator:
         )
     
 
-    def get_metrics_with_bet_types(self) -> GamblerMetricsWithBetTypes:
-        return GamblerMetricsWithBetTypes(
+    def get_advanced_metrics(self) -> GamblerAdvancedMetrics:
+        return GamblerAdvancedMetrics(
             overall=SetMetrics.from_counter(self.mc.overall),
             TD=SetMetrics.from_counter(self.mc.TD),
             non_TD=SetMetrics.from_counter(self.mc.non_TD),
@@ -211,5 +234,6 @@ class GamblerMetricsCalculator:
                 )
             ),
             bet_types=BetTypeMetrics.from_counter(self.mc),
+            prop_target_metrics=PropTargetMetrics.from_counter(self.mc, self._target_names),
             veto_metrics=SetVetoMetrics.from_counter(self.mc.vetoes)
         )

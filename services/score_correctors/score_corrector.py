@@ -13,13 +13,13 @@ ScoreCorrectionSet = dict[str, ScoreCorrection]
 GamblerScoreCorrections = dict[int, ScoreCorrectionSet]
 
 if TYPE_CHECKING:
-    from services.metric_calculator import GamblerBaseMetrics
+    from services.metric_calculator import GamblerAdvancedMetrics
 
 
 class GamblerScoreCorrector(ABC):
 
     @abstractmethod
-    def __init__(self, gambler_metrics: dict[int, "GamblerBaseMetrics"]) -> None: ...
+    def __init__(self, gambler_metrics: dict[int, "GamblerAdvancedMetrics"]) -> None: ...
 
     @abstractmethod
     def deductions(self) -> GamblerScoreCorrections: ...

@@ -154,6 +154,7 @@ class MetricCounter:
     over_vetoes: VetoCategoryCounter = field(default_factory=VetoCategoryCounter)
     under_vetoes: VetoCategoryCounter = field(default_factory=VetoCategoryCounter)
     prop_types: dict[PropBetType, "MetricCounter"] | None = field(default_factory=dict)
+    prop_targets: dict[int, "MetricCounter"] | None = field(default_factory=dict)
 
     def process_pv_pair(self, pv_pair: PickVetoPair):
         self.overall.process_pv_pair(pv_pair)
@@ -176,11 +177,15 @@ class MetricCounter:
             self.under_vetoes.process_pv_pair(pv_pair)
 
         self.vetoes.process_pv_pair(pv_pair)
-        
-        if self.prop_types:
+
+        if self.prop_types is not None:
             prop_type = pv_pair.get_prop_type()
-            self.prop_types[prop_type] = self.prop_types.get(prop_type, MetricCounter(prop_types=None)).process_pv_pair(pv_pair)
-        
+            self.prop_types[prop_type] = self.prop_types.get(prop_type, MetricCounter(prop_types=None, prop_targets=None)).process_pv_pair(pv_pair)
+
+        if self.prop_targets is not None:
+            target_id = pv_pair.get_prop_target_id()
+            self.prop_targets[target_id] = self.prop_targets.get(target_id, MetricCounter(prop_types=None, prop_targets=None)).process_pv_pair(pv_pair)
+
         return self
 
         

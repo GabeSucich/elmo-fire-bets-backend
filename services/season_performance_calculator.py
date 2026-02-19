@@ -6,7 +6,7 @@ from models import GamblingSeason, Parlay, ParlayState, PickVeto, Pick
 from .metric_counter import PickVetoPair
 from .score_correctors.score_corrector_2025 import GamblerScoreCorrector2025
 from .score_correctors.score_corrector import GamblerScoreCorrector, ScoreCorrectionSet
-from .metric_calculator import GamblerBaseMetrics, GamblerMetricsCalculator, GamblerMetricsWithBetTypes
+from .metric_calculator import GamblerMetricsCalculator, GamblerAdvancedMetrics
 
 SCORE_CORRECTORS = {
     2025: GamblerScoreCorrector2025,
@@ -18,25 +18,9 @@ def get_season_score_corrector_class(season_year: int):
 class GamblerPerformance(BaseModel):
     gambler_id: int
     corrected_score: float
-    metrics: GamblerBaseMetrics
+    metrics: GamblerAdvancedMetrics
     deductions: ScoreCorrectionSet
     augmentations: ScoreCorrectionSet
-
-def get_gambler_picks_veto_pairs(gambler_id: int, sorted_parlays: list[Parlay]) -> list[PickVetoPair]:
-    pick_veto_pairs: list[PickVetoPair] = []
-    for parlay in sorted_parlays:
-        if parlay.state != ParlayState.CLOSED or not parlay.result:
-            continue
-        gambler_pick: Pick | None = None
-        gambler_veto: PickVeto | None = None
-        for pick in parlay.picks:
-            if pick.gambler_id == gambler_id:
-                gambler_pick = pick
-            elif pick.veto and pick.veto.gambler_id == gambler_id:
-                gambler_veto = pick.veto
-        if gambler_pick is not None:
-            pick_veto_pairs.append(PickVetoPair(pick=gambler_pick, veto=gambler_veto))
-    return pick_veto_pairs
 
 class SeasonPerformanceCalculator:
 
@@ -54,7 +38,7 @@ class SeasonPerformanceCalculator:
         return self._performances
 
     def _get_performances(self) -> dict[int, GamblerPerformance]:
-        metrics = {gambler_id: calculator.get_base_metrics() for gambler_id, calculator in self.gambler_metrics_calculators.items()}
+        metrics = {gambler_id: calculator.get_advanced_metrics() for gambler_id, calculator in self.gambler_metrics_calculators.items()}
         score_corrector = self.score_corrector_class(metrics)
         deductions = score_corrector.deductions()
         augmentations = score_corrector.augmentations()

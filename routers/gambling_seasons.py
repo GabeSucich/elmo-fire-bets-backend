@@ -82,7 +82,7 @@ async def get_gambling_season(season_id: int, db: AsyncSession=Depends(get_db), 
     try:
         user_gambler = [g for g in all_gamblers.values() if g.user_id == user.id][0]
     except IndexError:
-        return HTTPException(403, detail="User is not a gambler in gambling season")
+        raise HTTPException(403, detail="User is not a gambler in gambling season")
     return GetGamblingSeasonResponseData(
         id=season.id,
         gambler_id=user_gambler.id,
@@ -124,7 +124,7 @@ async def get_season_parlays(
         .offset(offset)
         .options(
             selectinload(Parlay.picks)
-            .selectinload(Pick.veto)
+            .selectinload(Pick.vetoes)
             .selectinload(PickVeto.votes)
         ).options(
             selectinload(Parlay.picks)

@@ -10,7 +10,7 @@ from database import get_db
 from models.constants import ParlayResult, ParlayState, SlateType, PropBetDirection, SauceFactor
 from models.db import Parlay, Pick, PickVeto, User, PropBetType
 
-from .common import ParlayResponseData,PropBetTargetRequestData, get_or_create_prop_bet_target, check_user_access_to_parlay, check_gambler_access_to_season, check_user_is_gambler, query_parlay_with_selects, update_veto_approval_status
+from .common import ParlayResponseData,PropBetTargetRequestData, get_or_create_prop_bet_target, check_user_access_to_parlay, check_gambler_access_to_season, check_user_is_gambler, query_parlay_with_selects, update_veto_approval_status, check_season_in_progress
 from .auth import manager
 from utils.parlays import finalize_parlay_results as finalize_parlay_results_helper
 
@@ -26,10 +26,8 @@ class GetParlayResponseData(BaseModel):
 @router.get("/{parlay_id}", operation_id="get_parlay", response_model=GetParlayResponseData)
 async def get_parlay(parlay_id: int, db: AsyncSession=Depends(get_db), user: User = Depends(manager)):
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+    await check_user_access_to_parlay(user, parlay, db)
+
     return GetParlayResponseData(
         parlay=ParlayResponseData.from_model(parlay)
     )
@@ -50,10 +48,9 @@ async def create_parlay(
     db: AsyncSession=Depends(get_db),
     user: User=Depends(manager)
 ) -> CreateParlayResponseData | HTTPException:
-    access_exeception = await check_gambler_access_to_season(body.owner_id, body.gambling_season_id, db)
-    if access_exeception:
-        return access_exeception
-    
+    await check_gambler_access_to_season(body.owner_id, body.gambling_season_id, db)
+    await check_season_in_progress(body.gambling_season_id, db)
+
     max_order = (await db.execute(
         select(func.coalesce(func.max(Parlay.order), 0))
     )).scalar()
@@ -91,6 +88,7 @@ class UpdateParlayResponseData(BaseModel):
 @router.patch("/", operation_id="update_parlay", response_model=UpdateParlayResponseData)
 async def update_parlay(body: UpdateParlayRequestData, db: AsyncSession = Depends(get_db)) -> UpdateParlayResponseData:
     parlay = (await query_parlay_with_selects(body.parlay_id, db)).scalar_one()
+    await check_season_in_progress(parlay.gambling_season_id, db)
     updated = False
     if body.competition_date:
         parlay.competition_date = body.competition_date
@@ -120,12 +118,10 @@ class ClaimParlayResponseData(BaseModel): ...
 
 @router.post("/{parlay_id}/claim", operation_id="claim_parlay", response_model=ClaimParlayResponseData)
 async def claim_parlay(parlay_id: int, body: ClaimParlayRequestData, db: AsyncSession = Depends(get_db), user: User = Depends(manager)):
-    access_exception = await check_user_is_gambler(user, body.gambler_id, db)
+    await check_user_is_gambler(user, body.gambler_id, db)
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
-
-    access_exception = access_exception or await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        raise access_exception
+    await check_season_in_progress(parlay.gambling_season_id, db)
+    await check_user_access_to_parlay(user, parlay, db)
 
     parlay.owner_id = body.gambler_id
     await db.commit()
@@ -181,17 +177,18 @@ async def unlock_parlay(
     user: User = Depends(manager)
 ) -> UnlockParlayResponseData | HTTPException:
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
+    await check_season_in_progress(parlay.gambling_season_id, db)
     if parlay.owner.user_id != user.id:
-        return HTTPException(status_code=403, detail="Only the owner can unlock a parlay!")
+        raise HTTPException(status_code=403, detail="Only the owner can unlock a parlay!")
 
     if parlay.state != ParlayState.OPEN:
-        return HTTPException(status_code=500, detail="Can only unlock a parlay that is OPEN!")
+        raise HTTPException(status_code=500, detail="Can only unlock a parlay that is OPEN!")
     
     for pick in parlay.picks:
         pick.corrected_line = None
         pick.result = None
-        if pick.veto:
-            pick.veto.result = None
+        for veto in pick.vetoes:
+            veto.result = None
 
     parlay.state = ParlayState.BUILDING
     await db.commit()
@@ -209,24 +206,23 @@ async def lock_parlay(
     user: User = Depends(manager)
 ) -> LockParlayResponseData | HTTPException:
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
-    
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+
+    await check_season_in_progress(parlay.gambling_season_id, db)
+    await check_user_access_to_parlay(user, parlay, db)
+
     if parlay.owner.user_id != user.id:
-        return HTTPException(status_code=500, detail="User cannot change parlay state if they are not the owner!")
+        raise HTTPException(status_code=500, detail="User cannot change parlay state if they are not the owner!")
     
     if parlay.state != ParlayState.BUILDING:
-        return HTTPException(status_code=500, detail="Cannot lock a parlay that is not in the BUILDING state!")
+        raise HTTPException(status_code=500, detail="Cannot lock a parlay that is not in the BUILDING state!")
     
     for pick in parlay.picks:
         pick_override_data = body.pick_overrides.get(pick.id)
         if pick_override_data is not None and pick_override_data.pick_id == pick.id:
             await apply_pick_overrides(pick, pick_override_data, db)
         
-        if pick.veto:
-            await update_veto_approval_status(pick.veto, db, require_terminal_status=True)
+        for veto in pick.vetoes:
+            await update_veto_approval_status(veto, db, require_terminal_status=True)
         
     parlay.state = ParlayState.OPEN
     await db.commit()
@@ -250,15 +246,14 @@ async def finalize_parlay_results(
 ) -> FinalizeParlayResultsResponseData | HTTPException:
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
 
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+    await check_season_in_progress(parlay.gambling_season_id, db)
+    await check_user_access_to_parlay(user, parlay, db)
+
     if parlay.state == ParlayState.BUILDING:
-        return HTTPException(status_code=500, detail="Cannot finalize the results of a parlay that is still being built!")
+        raise HTTPException(status_code=500, detail="Cannot finalize the results of a parlay that is still being built!")
 
     if parlay.owner.user_id != user.id:
-        return HTTPException(status_code=403, detail="Only the parlay owner can finalize its results!")
+        raise HTTPException(status_code=403, detail="Only the parlay owner can finalize its results!")
     
     updated_parlay, possible_results = await finalize_parlay_results_helper(parlay, db)
 
@@ -283,15 +278,16 @@ async def close_parlay(
 ) -> CloseParlayResponseData | HTTPException:
     
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
+    await check_season_in_progress(parlay.gambling_season_id, db)
     if parlay.owner.user_id != user.id:
-        return HTTPException(status_code=403, detail="Only a parlay owner can close a parlay!")
+        raise HTTPException(status_code=403, detail="Only a parlay owner can close a parlay!")
 
     if parlay.state != ParlayState.OPEN:
-        return HTTPException(status_code=500, detail="Can only close a parlay if it is currently OPEN!")
+        raise HTTPException(status_code=500, detail="Can only close a parlay if it is currently OPEN!")
     
     updated_parlay, possible_results = await finalize_parlay_results_helper(parlay, db)
     if body.parlay_result not in possible_results:
-        return HTTPException(status_code=500, detail=f"Result {body.parlay_result} is not one of {[possible_results]}!")
+        raise HTTPException(status_code=500, detail=f"Result {body.parlay_result} is not one of {[possible_results]}!")
     
     parlay.result = body.parlay_result
     parlay.state = ParlayState.CLOSED
@@ -316,11 +312,12 @@ async def reopen_parlay(
     db: AsyncSession = Depends(get_db)
 ) -> ReopenParlayResponseData | HTTPException:
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
+    await check_season_in_progress(parlay.gambling_season_id, db)
     if parlay.owner.user_id != user.id:
-        return HTTPException(status_code=403, detail="Only the owner can reopen a parlay!")
+        raise HTTPException(status_code=403, detail="Only the owner can reopen a parlay!")
 
     if parlay.state != ParlayState.CLOSED:
-        return HTTPException(status_code=500, detail="Can only reopen a parlay that is CLOSED!")
+        raise HTTPException(status_code=500, detail="Can only reopen a parlay that is CLOSED!")
     
     parlay.result = None
 
@@ -343,12 +340,11 @@ async def delete_parlay(
 ) -> DeleteParlayResponseData | HTTPException:
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
 
-    access_exception = await check_user_access_to_parlay(user, parlay, db)
-    if access_exception:
-        return access_exception
-    
+    await check_season_in_progress(parlay.gambling_season_id, db)
+    await check_user_access_to_parlay(user, parlay, db)
+
     if parlay.state != ParlayState.BUILDING:
-        return HTTPException(status_code=500, detail="Cannot delete a parlay that is not BUILDING!")
+        raise HTTPException(status_code=500, detail="Cannot delete a parlay that is not BUILDING!")
     
     await db.delete(parlay)
     await db.commit()
@@ -372,13 +368,12 @@ async def swap_parlay_order(
     parlay_1 = (await query_parlay_with_selects(body.parlay_id_1, db)).scalar_one()
     parlay_2 = (await query_parlay_with_selects(body.parlay_id_2, db)).scalar_one()
 
-    access_exception = await check_user_access_to_parlay(user, parlay_1, db)
-    access_exception = access_exception or await check_user_access_to_parlay(user, parlay_2, db)
-    if access_exception:
-        return access_exception
+    await check_season_in_progress(parlay_1.gambling_season_id, db)
+    await check_user_access_to_parlay(user, parlay_1, db)
+    await check_user_access_to_parlay(user, parlay_2, db)
     
     if parlay_1.gambling_season_id != parlay_2.gambling_season_id:
-        return HTTPException(status_code=500, detail="Cannot swap order of parlays from different gambling seasons")
+        raise HTTPException(status_code=500, detail="Cannot swap order of parlays from different gambling seasons")
     
     parlay_1.order, parlay_2.order = parlay_2.order, parlay_1.order
     await db.commit()

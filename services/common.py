@@ -79,14 +79,22 @@ class PickVetoPair:
     def get_prop_type(self):
         return self.pick.prop_type
 
+    def get_prop_target_id(self):
+        return self.pick.prop_bet_target_id
+
+    def get_prop_target_display_name(self):
+        target = self.pick.prop_bet_target
+        return target.player_name or target.team_name
+
 def pick_veto_pair_from_parlay(gambler_id: int, parlay: Parlay) -> PickVetoPair | None:
     gambler_pick: Pick | None = None
     gambler_veto: PickVeto | None = None
     for pick in parlay.picks:
         if pick.gambler_id == gambler_id:
             gambler_pick = pick
-        elif pick.veto and pick.veto.gambler_id == gambler_id:
-            gambler_veto = pick.veto
+        gambler_vetoes = [v for v in pick.vetoes if v.gambler_id == gambler_id and v.approval_status == VetoApprovalStatus.APPROVED]
+        if len(gambler_vetoes) > 0:
+            gambler_veto = gambler_vetoes[0]
     if gambler_pick is not None:
         return PickVetoPair(pick=gambler_pick, veto=gambler_veto)
     return None

@@ -39,7 +39,9 @@ async def finalize_parlay_results(parlay: Parlay, db: AsyncSession) -> Tuple[Par
 
     possible_parlay_results: list[ParlayResult] = []
     if len(incorrect_picks) == 0:
-        approved_vetoes: list[PickVeto] = [pick.veto for (pick, _) in picks_and_results if pick.veto and pick.veto.approval_status == VetoApprovalStatus.APPROVED]
+        approved_vetoes: list[PickVeto] = []
+        for pick, _ in picks_and_results:
+            approved_vetoes.extend([v for v in pick.vetoes if v.approval_status == VetoApprovalStatus.APPROVED])
         if len(approved_vetoes) > 1:
             raise ValueError("There should never be more than one approved veto for a parlay!")
         elif len(approved_vetoes) == 1:
@@ -52,8 +54,11 @@ async def finalize_parlay_results(parlay: Parlay, db: AsyncSession) -> Tuple[Par
     elif len(incorrect_picks) == 1:
         bozo_pick = incorrect_picks[0]
         bozo_pick.result = PickResult.BOZO
-        veto = bozo_pick.veto
-        if veto and veto.approval_status == VetoApprovalStatus.APPROVED:
+        approved_vetoes = [v for v in bozo_pick.vetoes if v.approval_status == VetoApprovalStatus.APPROVED]
+        if len(approved_vetoes) > 1:
+            raise ValueError("There should never be more than one approved veto for a parlay!")
+        elif len(approved_vetoes) == 1:
+            veto = approved_vetoes[0]
             veto.result = VetoResult.BOZO_SAVER
             possible_parlay_results = [ParlayResult.WIN]
         else:
