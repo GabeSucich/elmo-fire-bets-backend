@@ -1,3 +1,5 @@
+import asyncio
+
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,19 +20,27 @@ router = APIRouter(tags=["Auth"])
 
 @manager.user_loader()
 async def load_user(username: str):
-    async with async_session() as db:
-        user_query = await db.execute(
-            select(User)
-            .where(User.username == username)
-            .options(
-                selectinload(User.gamblers)
-                .selectinload(Gambler.gambling_season)
-            )
-        )
-        user: User | None = user_query.scalar_one_or_none()
-        if user is None:
-            raise HTTPException(status_code=500, detail="Username was not recognized")
-        return user
+    for attempt in range(3):
+        try:
+            async with async_session() as db:
+                user_query = await db.execute(
+                    select(User)
+                    .where(User.username == username)
+                    .options(
+                        selectinload(User.gamblers)
+                        .selectinload(Gambler.gambling_season)
+                    )
+                )
+                user: User | None = user_query.scalar_one_or_none()
+                if user is None:
+                    raise HTTPException(status_code=500, detail="Username was not recognized")
+                return user
+        except HTTPException:
+            raise
+        except Exception:
+            if attempt == 2:
+                raise
+            await asyncio.sleep(2)
 
 class LoginRequestData(BaseModel):
     username: str
