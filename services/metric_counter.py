@@ -153,11 +153,13 @@ class SlateFilteredCounter:
     overall: PickCategoryCounter = field(default_factory=PickCategoryCounter)
     spicy: PickCategoryCounter = field(default_factory=PickCategoryCounter)
     bitch: PickCategoryCounter = field(default_factory=PickCategoryCounter)
+    vetoes: VetoCategoryCounter = field(default_factory=VetoCategoryCounter)
     prop_types: dict[PropBetType, PickCategoryCounter] = field(default_factory=dict)
     prop_targets: dict[str, PickCategoryCounter] = field(default_factory=dict)
 
     def process_pv_pair(self, pv_pair: PickVetoPair):
         self.overall.process_pv_pair(pv_pair)
+        self.vetoes.process_pv_pair(pv_pair)
 
         if pv_pair.is_spicy_pick():
             self.spicy.process_pv_pair(pv_pair)

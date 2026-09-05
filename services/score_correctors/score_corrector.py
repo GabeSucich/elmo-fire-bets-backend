@@ -13,7 +13,7 @@ ScoreCorrectionSet = dict[str, ScoreCorrection]
 GamblerScoreCorrections = dict[int, ScoreCorrectionSet]
 
 if TYPE_CHECKING:
-    from services.metric_calculator import GamblerAdvancedMetrics
+    from services.metric_calculator import GamblerAdvancedMetrics, ScoredMetrics
 
 
 class GamblerScoreCorrector(ABC):
@@ -22,7 +22,13 @@ class GamblerScoreCorrector(ABC):
     def __init__(self, gambler_metrics: dict[int, "GamblerAdvancedMetrics"]) -> None: ...
 
     @abstractmethod
-    def base_score(self, gambler_metrics: "GamblerAdvancedMetrics") -> float | None: ...
+    def scored_metrics(self, gambler_metrics: "GamblerAdvancedMetrics") -> "ScoredMetrics":
+        """The subset of a gambler's picks this season's rules run on.
+
+        The score and the stats displayed alongside it both come from here, so a
+        season that leaves some picks out of scoring cannot end up showing numbers
+        that contradict the score it produced.
+        """
 
     @abstractmethod
     def deductions(self) -> GamblerScoreCorrections: ...

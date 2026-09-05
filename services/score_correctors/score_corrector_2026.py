@@ -1,5 +1,6 @@
 from typing import *
 
+from services.metric_calculator import ScoredMetrics
 from .score_corrector import GamblerScoreCorrector, GamblerScoreCorrections, ScoreCorrection
 
 if TYPE_CHECKING:
@@ -15,8 +16,9 @@ class GamblerScoreCorrector2026(GamblerScoreCorrector):
     def __init__(self, all_gambler_metrics: dict[int, 'GamblerBaseMetrics']) -> None:
         self.all_gambler_metrics = all_gambler_metrics
 
-    def base_score(self, gambler_metrics: 'GamblerBaseMetrics') -> float | None:
-        return gambler_metrics.non_TD_slate.overall.win_rate
+    def scored_metrics(self, gambler_metrics: 'GamblerBaseMetrics') -> ScoredMetrics:
+        # 2026 leaves TD slates out of scoring entirely.
+        return ScoredMetrics.of(gambler_metrics.non_TD_slate)
 
     def deductions(self) -> GamblerScoreCorrections:
         gamblers_with_most_bozos: list[int] = []

@@ -1,6 +1,7 @@
 from typing import *
 
 from models import Parlay
+from services.metric_calculator import ScoredMetrics
 from .score_corrector import GamblerScoreCorrector, GamblerScoreCorrections, ScoreCorrectionSet, ScoreCorrection
 
 if TYPE_CHECKING:
@@ -15,8 +16,9 @@ class GamblerScoreCorrector2025(GamblerScoreCorrector):
     def __init__(self, all_gambler_metrics: dict[int, 'GamblerBaseMetrics']) -> None:
         self.all_gambler_metrics = all_gambler_metrics
 
-    def base_score(self, gambler_metrics: 'GamblerBaseMetrics') -> float | None:
-        return gambler_metrics.overall.win_rate
+    def scored_metrics(self, gambler_metrics: 'GamblerBaseMetrics') -> ScoredMetrics:
+        # 2025 scored every slate, TD nights included.
+        return ScoredMetrics.of(gambler_metrics)
 
     def deductions(self) -> GamblerScoreCorrections:
         gamblers_with_most_bozos: list[int] = []

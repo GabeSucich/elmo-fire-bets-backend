@@ -85,9 +85,30 @@ class SauceFactorMetrics(BaseModel):
     spicy: SetMetrics
     bitch: SetMetrics
 
+class ScoredMetrics(BaseModel):
+    """The sample a season's rules actually score on.
+
+    Both the whole-season metrics and a single slate bucket carry these three fields,
+    so a corrector can return either and the client renders it without needing to know
+    which. Keeps the stats shown beside a score from disagreeing with it.
+    """
+    overall: SetMetrics
+    sauce_factor: SauceFactorMetrics
+    veto_metrics: SetVetoMetrics
+
+    @classmethod
+    def of(cls, metrics) -> "ScoredMetrics":
+        return cls(
+            overall=metrics.overall,
+            sauce_factor=metrics.sauce_factor,
+            veto_metrics=metrics.veto_metrics,
+        )
+
+
 class SlateFilteredMetrics(BaseModel):
     overall: SetMetrics
     sauce_factor: SauceFactorMetrics
+    veto_metrics: SetVetoMetrics
     bet_types: dict[PropBetType, SetMetrics]
     prop_targets: dict[str, SetMetrics]
     target_names: dict[str, str]
@@ -100,6 +121,7 @@ class SlateFilteredMetrics(BaseModel):
                 spicy=SetMetrics.from_counter(counter.spicy),
                 bitch=SetMetrics.from_counter(counter.bitch)
             ),
+            veto_metrics=SetVetoMetrics.from_counter(counter.vetoes),
             bet_types={
                 prop_type: SetMetrics.from_counter(c)
                 for prop_type, c in counter.prop_types.items()

@@ -1929,6 +1929,9 @@
           "metrics": {
             "$ref": "#/components/schemas/GamblerAdvancedMetrics"
           },
+          "scored_metrics": {
+            "$ref": "#/components/schemas/ScoredMetrics"
+          },
           "deductions": {
             "additionalProperties": {
               "$ref": "#/components/schemas/ScoreCorrection"
@@ -1949,6 +1952,7 @@
           "gambler_id",
           "corrected_score",
           "metrics",
+          "scored_metrics",
           "deductions",
           "augmentations"
         ],
@@ -2856,6 +2860,27 @@
         ],
         "title": "ScoreCorrection"
       },
+      "ScoredMetrics": {
+        "properties": {
+          "overall": {
+            "$ref": "#/components/schemas/SetMetrics"
+          },
+          "sauce_factor": {
+            "$ref": "#/components/schemas/SauceFactorMetrics"
+          },
+          "veto_metrics": {
+            "$ref": "#/components/schemas/SetVetoMetrics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "overall",
+          "sauce_factor",
+          "veto_metrics"
+        ],
+        "title": "ScoredMetrics",
+        "description": "The sample a season's rules actually score on.\n\nBoth the whole-season metrics and a single slate bucket carry these three fields,\nso a corrector can return either and the client renders it without needing to know\nwhich. Keeps the stats shown beside a score from disagreeing with it."
+      },
       "SetMetrics": {
         "properties": {
           "total": {
@@ -3055,6 +3080,9 @@
           "sauce_factor": {
             "$ref": "#/components/schemas/SauceFactorMetrics"
           },
+          "veto_metrics": {
+            "$ref": "#/components/schemas/SetVetoMetrics"
+          },
           "bet_types": {
             "additionalProperties": {
               "$ref": "#/components/schemas/SetMetrics"
@@ -3084,6 +3112,7 @@
         "required": [
           "overall",
           "sauce_factor",
+          "veto_metrics",
           "bet_types",
           "prop_targets",
           "target_names"

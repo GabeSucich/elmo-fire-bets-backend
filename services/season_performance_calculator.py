@@ -7,7 +7,7 @@ from .metric_counter import PickVetoPair
 from .score_correctors.score_corrector_2025 import GamblerScoreCorrector2025
 from .score_correctors.score_corrector_2026 import GamblerScoreCorrector2026
 from .score_correctors.score_corrector import GamblerScoreCorrector, ScoreCorrectionSet
-from .metric_calculator import GamblerMetricsCalculator, GamblerAdvancedMetrics
+from .metric_calculator import GamblerMetricsCalculator, GamblerAdvancedMetrics, ScoredMetrics
 
 SCORE_CORRECTORS = {
     2025: GamblerScoreCorrector2025,
@@ -21,6 +21,7 @@ class GamblerPerformance(BaseModel):
     gambler_id: int
     corrected_score: float
     metrics: GamblerAdvancedMetrics
+    scored_metrics: ScoredMetrics
     deductions: ScoreCorrectionSet
     augmentations: ScoreCorrectionSet
 
@@ -50,7 +51,8 @@ class SeasonPerformanceCalculator:
         for gambler_id, gambler_metrics in metrics.items():
             gambler_deductions = deductions.get(gambler_id, {})
             gambler_augmentations = augmentations.get(gambler_id, {})
-            base_score = score_corrector.base_score(gambler_metrics)
+            scored = score_corrector.scored_metrics(gambler_metrics)
+            base_score = scored.overall.win_rate
             if base_score is None:
                 corrected_score = 0
             else:
@@ -61,6 +63,7 @@ class SeasonPerformanceCalculator:
                 gambler_id=gambler_id,
                 corrected_score=corrected_score,
                 metrics=gambler_metrics,
+                scored_metrics=scored,
                 deductions=gambler_deductions,
                 augmentations=gambler_augmentations
             )
