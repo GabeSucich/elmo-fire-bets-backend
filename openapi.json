@@ -3095,6 +3095,7 @@
         "enum": [
           "TNF",
           "FNF",
+          "WNF",
           "Morning slate",
           "Afternoon slate",
           "TD",
