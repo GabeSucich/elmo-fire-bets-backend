@@ -5,7 +5,7 @@ from typing import Union
 from pydantic import BaseModel
 
 from models import PropBetType, Parlay, Pick, PickVeto, VetoResult, PickResult, ParlayState, SauceFactor, PropBetDirection
-from .metric_counter import MetricCounter, PickCategoryCounter, VetoCategoryCounter
+from .metric_counter import MetricCounter, PickCategoryCounter, VetoCategoryCounter, SlateFilteredCounter
 from .common import PickVetoPair, pick_veto_pair_from_parlay
 
 def round_to(n: float, to=4):
@@ -85,6 +85,35 @@ class SauceFactorMetrics(BaseModel):
     spicy: SetMetrics
     bitch: SetMetrics
 
+class SlateFilteredMetrics(BaseModel):
+    overall: SetMetrics
+    sauce_factor: SauceFactorMetrics
+    bet_types: dict[PropBetType, SetMetrics]
+    prop_targets: dict[str, SetMetrics]
+    target_names: dict[str, str]
+
+    @classmethod
+    def from_counter(cls, counter: SlateFilteredCounter, target_names: dict[str, str]):
+        return cls(
+            overall=SetMetrics.from_counter(counter.overall),
+            sauce_factor=SauceFactorMetrics(
+                spicy=SetMetrics.from_counter(counter.spicy),
+                bitch=SetMetrics.from_counter(counter.bitch)
+            ),
+            bet_types={
+                prop_type: SetMetrics.from_counter(c)
+                for prop_type, c in counter.prop_types.items()
+            },
+            prop_targets={
+                target_key: SetMetrics.from_counter(c)
+                for target_key, c in counter.prop_targets.items()
+            },
+            target_names={
+                target_key: target_names.get(target_key, f"Target {target_key}")
+                for target_key in counter.prop_targets
+            }
+        )
+
 class DirectionVetoMetrics(BaseModel):
     overs: SetVetoMetrics
     unders: SetVetoMetrics
@@ -156,6 +185,8 @@ class GamblerBaseMetrics(BaseModel):
     overall: SetMetrics
     TD: SetMetrics
     non_TD: SetMetrics
+    non_TD_slate: SlateFilteredMetrics
+    TD_slate: SlateFilteredMetrics
     sauce_factor: SauceFactorMetrics
     direction: DirectionMetrics
     veto_metrics: SetVetoMetrics
@@ -169,6 +200,7 @@ class GamblerMetricsCalculator:
         self.mc = MetricCounter()
         self._pv_pairs: list[PickVetoPair] = []
         self._target_names: dict[int, str] = {}
+        self._target_group_names: dict[str, str] = {}
 
     def process_pv_pair(self, pv_pair: PickVetoPair):
         self.mc.process_pv_pair(pv_pair)
@@ -176,6 +208,10 @@ class GamblerMetricsCalculator:
         target_id = pv_pair.get_prop_target_id()
         if target_id not in self._target_names:
             self._target_names[target_id] = pv_pair.get_prop_target_display_name()
+
+        target_key = pv_pair.get_target_group_key()
+        if target_key not in self._target_group_names:
+            self._target_group_names[target_key] = pv_pair.get_target_group_name()
     
     @classmethod
     def calculator_from_parlays(cls, gambler_id: int, parlays: list[Parlay]):
@@ -200,6 +236,8 @@ class GamblerMetricsCalculator:
             overall=SetMetrics.from_counter(self.mc.overall),
             TD=SetMetrics.from_counter(self.mc.TD),
             non_TD=SetMetrics.from_counter(self.mc.non_TD),
+            non_TD_slate=SlateFilteredMetrics.from_counter(self.mc.non_TD_slate, self._target_group_names),
+            TD_slate=SlateFilteredMetrics.from_counter(self.mc.TD_slate, self._target_group_names),
             sauce_factor=SauceFactorMetrics(
                 spicy=SetMetrics.from_counter(self.mc.spicy),
                 bitch=SetMetrics.from_counter(self.mc.bitch)
@@ -221,6 +259,8 @@ class GamblerMetricsCalculator:
             overall=SetMetrics.from_counter(self.mc.overall),
             TD=SetMetrics.from_counter(self.mc.TD),
             non_TD=SetMetrics.from_counter(self.mc.non_TD),
+            non_TD_slate=SlateFilteredMetrics.from_counter(self.mc.non_TD_slate, self._target_group_names),
+            TD_slate=SlateFilteredMetrics.from_counter(self.mc.TD_slate, self._target_group_names),
             sauce_factor=SauceFactorMetrics(
                 spicy=SetMetrics.from_counter(self.mc.spicy),
                 bitch=SetMetrics.from_counter(self.mc.bitch)

@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 
-from models import Parlay, Pick, PickVeto, PickResult, VetoResult, PropBetType, SauceFactor, VetoApprovalStatus, ParlayState, PropBetDirection
+from models import Parlay, Pick, PickVeto, PickResult, VetoResult, PropBetType, SauceFactor, VetoApprovalStatus, ParlayState, PropBetDirection, SlateType
 
 @dataclass
 class PickVetoPair:
     pick: Pick
     veto: PickVeto | None
+    slate_type: SlateType
 
     def is_bozo(self):
         return self.pick.result == PickResult.BOZO or (self.veto and self.veto.result == VetoResult.BOZO)
@@ -57,6 +58,9 @@ class PickVetoPair:
     
     def is_TD_pick(self):
         return self.pick.prop_type == PropBetType.TDS
+
+    def is_TD_slate_parlay(self):
+        return self.slate_type == SlateType.TD
     
     def is_over_pick(self):
         return self.pick.direction == PropBetDirection.OVER
@@ -86,6 +90,26 @@ class PickVetoPair:
         target = self.pick.prop_bet_target
         return target.player_name or target.team_name
 
+    def is_team_target(self):
+        return self.pick.prop_bet_target.player_name is None
+
+    def get_target_group_key(self) -> str:
+        """Trend grouping key for a pick's target.
+
+        A team is picked for several unrelated props, so grouping every pick on a
+        team together says nothing useful — the team is split per prop type. A
+        player is one subject whichever prop is attached, so they stay whole.
+        """
+        if self.is_team_target():
+            return f"{self.pick.prop_bet_target_id}:{self.pick.prop_type.value}"
+        return str(self.pick.prop_bet_target_id)
+
+    def get_target_group_name(self) -> str:
+        target = self.pick.prop_bet_target
+        if self.is_team_target():
+            return f"{target.team_name} {self.pick.prop_type.value}"
+        return target.player_name
+
 def pick_veto_pair_from_parlay(gambler_id: int, parlay: Parlay) -> PickVetoPair | None:
     gambler_pick: Pick | None = None
     gambler_veto: PickVeto | None = None
@@ -96,7 +120,7 @@ def pick_veto_pair_from_parlay(gambler_id: int, parlay: Parlay) -> PickVetoPair 
         if len(gambler_vetoes) > 0:
             gambler_veto = gambler_vetoes[0]
     if gambler_pick is not None:
-        return PickVetoPair(pick=gambler_pick, veto=gambler_veto)
+        return PickVetoPair(pick=gambler_pick, veto=gambler_veto, slate_type=parlay.slate_type)
     return None
 
 

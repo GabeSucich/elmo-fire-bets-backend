@@ -22,6 +22,9 @@ class GamblerScoreCorrector(ABC):
     def __init__(self, gambler_metrics: dict[int, "GamblerAdvancedMetrics"]) -> None: ...
 
     @abstractmethod
+    def base_score(self, gambler_metrics: "GamblerAdvancedMetrics") -> float | None: ...
+
+    @abstractmethod
     def deductions(self) -> GamblerScoreCorrections: ...
 
     @abstractmethod

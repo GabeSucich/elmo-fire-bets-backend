@@ -7,7 +7,10 @@ from .prompts import EXTRACTION_PROMPT
 EXTRACTION_MODEL = "gpt-5-mini"
 
 # The slips are large, clean text rather than hard OCR, but `2+` -> Over 1.5 and the
-# bet-type vocabulary mapping are reasoning-shaped enough to warrant mini over nano.
+# bet-type vocabulary mapping are reasoning-shaped enough to warrant mini over nano —
+# nano misreads them even at higher effort. Effort itself buys nothing here and costs a
+# lot of latency: on the real fixture, low took 16.6s against 4.3s for minimal, with
+# identical output.
 
 _MAGIC_PREFIXES = {
     "iVBORw0KGgo": "image/png",
@@ -35,7 +38,7 @@ async def extract_legs(images: list[str]) -> ExtractionResult:
     """
     response = await get_client().responses.parse(
         model=EXTRACTION_MODEL,
-        reasoning={"effort": "low"},
+        reasoning={"effort": "minimal"},
         input=[
             {
                 "role": "user",

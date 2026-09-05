@@ -142,10 +142,44 @@ class VetoCategoryCounter:
 
 
 @dataclass
+class SlateFilteredCounter:
+    """Counters restricted to a subset of parlays, used for season scoring and
+    for trends that need TD slates kept separate from everything else.
+
+    The per-prop and per-target breakdowns are plain pick counters rather than
+    full MetricCounters: trends only need totals and win rates, and the metrics
+    payload already carries the unfiltered breakdown in full detail.
+    """
+    overall: PickCategoryCounter = field(default_factory=PickCategoryCounter)
+    spicy: PickCategoryCounter = field(default_factory=PickCategoryCounter)
+    bitch: PickCategoryCounter = field(default_factory=PickCategoryCounter)
+    prop_types: dict[PropBetType, PickCategoryCounter] = field(default_factory=dict)
+    prop_targets: dict[str, PickCategoryCounter] = field(default_factory=dict)
+
+    def process_pv_pair(self, pv_pair: PickVetoPair):
+        self.overall.process_pv_pair(pv_pair)
+
+        if pv_pair.is_spicy_pick():
+            self.spicy.process_pv_pair(pv_pair)
+        elif pv_pair.is_bitch_pick():
+            self.bitch.process_pv_pair(pv_pair)
+
+        prop_type = pv_pair.get_prop_type()
+        self.prop_types[prop_type] = self.prop_types.get(prop_type, PickCategoryCounter()).process_pv_pair(pv_pair)
+
+        target_key = pv_pair.get_target_group_key()
+        self.prop_targets[target_key] = self.prop_targets.get(target_key, PickCategoryCounter()).process_pv_pair(pv_pair)
+
+        return self
+
+
+@dataclass
 class MetricCounter:
     overall: PickCategoryCounter = field(default_factory=PickCategoryCounter)
     TD: PickCategoryCounter = field(default_factory=PickCategoryCounter)
     non_TD: PickCategoryCounter = field(default_factory=PickCategoryCounter)
+    non_TD_slate: SlateFilteredCounter = field(default_factory=SlateFilteredCounter)
+    TD_slate: SlateFilteredCounter = field(default_factory=SlateFilteredCounter)
     spicy: PickCategoryCounter = field(default_factory=PickCategoryCounter)
     bitch: PickCategoryCounter = field(default_factory=PickCategoryCounter)
     overs: PickCategoryCounter = field(default_factory=PickCategoryCounter)
@@ -163,6 +197,11 @@ class MetricCounter:
             self.TD.process_pv_pair(pv_pair)
         else:
             self.non_TD.process_pv_pair(pv_pair)
+
+        if pv_pair.is_TD_slate_parlay():
+            self.TD_slate.process_pv_pair(pv_pair)
+        else:
+            self.non_TD_slate.process_pv_pair(pv_pair)
 
         if pv_pair.is_spicy_pick():
             self.spicy.process_pv_pair(pv_pair)

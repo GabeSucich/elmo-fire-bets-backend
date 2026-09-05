@@ -5,7 +5,9 @@ from .client import CorrectionAnalysisError, get_client
 from .models import ExtractedLeg, MatchingResult, PickForMatching
 from .prompts import MATCHING_PROMPT
 
-MATCHING_MODEL = "gpt-5-nano"
+# Mini rather than nano: at minimal effort it is both quicker and right, where nano
+# mismatched the same fixture. Measured on the real slip — nano/low 11.4s, mini/minimal 2.9s.
+MATCHING_MODEL = "gpt-5-mini"
 
 # Matching is pure identity resolution, so the model is shown only identity. Withholding
 # the pick's number is the point: `pipeline` copies the number from the matched leg and
@@ -32,7 +34,7 @@ async def match_legs(
 
     response = await get_client().responses.parse(
         model=MATCHING_MODEL,
-        reasoning={"effort": "low"},
+        reasoning={"effort": "minimal"},
         input=[
             {"role": "system", "content": MATCHING_PROMPT},
             {"role": "user", "content": json.dumps(payload, indent=2)},

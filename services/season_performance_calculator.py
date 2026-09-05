@@ -5,11 +5,13 @@ from pydantic import BaseModel
 from models import GamblingSeason, Parlay, ParlayState, PickVeto, Pick
 from .metric_counter import PickVetoPair
 from .score_correctors.score_corrector_2025 import GamblerScoreCorrector2025
+from .score_correctors.score_corrector_2026 import GamblerScoreCorrector2026
 from .score_correctors.score_corrector import GamblerScoreCorrector, ScoreCorrectionSet
 from .metric_calculator import GamblerMetricsCalculator, GamblerAdvancedMetrics
 
 SCORE_CORRECTORS = {
     2025: GamblerScoreCorrector2025,
+    2026: GamblerScoreCorrector2026,
 }
 
 def get_season_score_corrector_class(season_year: int):
@@ -48,13 +50,13 @@ class SeasonPerformanceCalculator:
         for gambler_id, gambler_metrics in metrics.items():
             gambler_deductions = deductions.get(gambler_id, {})
             gambler_augmentations = augmentations.get(gambler_id, {})
-            win_rate = gambler_metrics.overall.win_rate
-            if win_rate is None:
+            base_score = score_corrector.base_score(gambler_metrics)
+            if base_score is None:
                 corrected_score = 0
             else:
                 deduction_values = [d.adjustment for d in gambler_deductions.values()]
                 augmentation_values = [a.adjustment for a in gambler_augmentations.values()]
-                corrected_score = win_rate + sum(deduction_values + augmentation_values)
+                corrected_score = base_score + sum(deduction_values + augmentation_values)
             gambler_performance = GamblerPerformance(
                 gambler_id=gambler_id,
                 corrected_score=corrected_score,
