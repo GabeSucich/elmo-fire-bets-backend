@@ -182,7 +182,7 @@ async def apply_pick_override(
         pick.prop_type = body.prop_type
     if body.direction:
         pick.direction = body.direction
-    if body.line:
+    if body.line is not None:
         pick.corrected_line = body.line
     if body.sauce_factor:
         pick.sauce_factor = body.sauce_factor
