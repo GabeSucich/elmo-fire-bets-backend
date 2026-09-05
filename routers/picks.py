@@ -38,7 +38,10 @@ router = APIRouter(
     tags=["Picks"]
 )
 
-async def user_can_edit_picks(parlay: Parlay, user: User):
+# Deliberately not async: it does no I/O, and as a coroutine it was being called without
+# await at both call sites — `not <coroutine>` is always False, so this guard never fired
+# and anyone in the season could edit picks on a locked parlay.
+def user_can_edit_picks(parlay: Parlay, user: User):
     return parlay.state == ParlayState.BUILDING or parlay.owner.user_id == user.id
 
 def user_can_override_picks(parlay: Parlay, user: User):
