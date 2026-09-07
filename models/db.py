@@ -1,7 +1,7 @@
 import datetime
 from enum import StrEnum
 
-from sqlalchemy import Float, ForeignKey, Enum as SQLEnum, Integer, String, null
+from sqlalchemy import Boolean, Float, ForeignKey, Enum as SQLEnum, Integer, String, UniqueConstraint, null
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -24,10 +24,12 @@ class Gambler(Base):
     user: Mapped["User"] = relationship(back_populates="gamblers")
     gambling_season_id: Mapped[int] = mapped_column(ForeignKey("gambling_seasons.id"))
     gambling_season: Mapped["GamblingSeason"] = relationship(back_populates="gamblers")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     vetoes: Mapped[list["PickVeto"]] = relationship(back_populates="gambler")
     owned_parlays: Mapped[list["Parlay"]] = relationship(back_populates="owner")
     picks: Mapped[list["Pick"]] = relationship(back_populates="gambler")
+    season_picks: Mapped[list["SeasonPick"]] = relationship(back_populates="gambler", cascade="all, delete-orphan")
 
 class GamblingSeasonState(StrEnum):
     IN_PROGRESS = "In Progress"
@@ -110,3 +112,51 @@ class Parlay(Base):
     gambling_season: Mapped[GamblingSeason] = relationship(back_populates="parlays")
     owner: Mapped[Gambler] = relationship(back_populates="owned_parlays")
 
+
+
+class SeasonPick(Base):
+    """A pick that runs the whole season rather than sitting inside a parlay.
+
+    Kept separate from Pick: there is no parlay, no veto, and no sauce factor, and
+    team win totals have no prop type at all.
+    """
+    __tablename__ = "season_picks"
+
+    gambling_season_id: Mapped[int] = mapped_column(ForeignKey("gambling_seasons.id"))
+    gambler_id: Mapped[int] = mapped_column(ForeignKey("gamblers.id"))
+    kind: Mapped[SeasonPickKind] = mapped_column(SQLEnum(SeasonPickKind))
+    prop_bet_target_id: Mapped[int] = mapped_column(ForeignKey("prop_bet_targets.id"))
+    # Null for TEAM_WINS, which is a win count rather than a stat line.
+    prop_type: Mapped[PropBetType | None] = mapped_column(SQLEnum(PropBetType), nullable=True, default=None)
+    line: Mapped[float] = mapped_column(Float)
+    direction: Mapped[PropBetDirection] = mapped_column(SQLEnum(PropBetDirection))
+    # Gamblers enter their own picks; the admin locks them in. A finalized pick is
+    # editable only by the admin.
+    is_finalized: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    gambler: Mapped["Gambler"] = relationship(back_populates="season_picks")
+    gambling_season: Mapped["GamblingSeason"] = relationship()
+    prop_bet_target: Mapped["PropBetTarget"] = relationship()
+    weeks: Mapped[list["SeasonPickWeek"]] = relationship(
+        back_populates="season_pick", cascade="all, delete-orphan"
+    )
+
+
+class SeasonPickWeek(Base):
+    """One week's result for a season pick.
+
+    Rows are sparse on purpose: a row existing means the week was entered, so a bye
+    (played=False) is never confused with a week nobody has filled in yet. Season
+    totals are summed from these on read rather than carried as a running value.
+    """
+    __tablename__ = "season_pick_weeks"
+    __table_args__ = (UniqueConstraint("season_pick_id", "week", name="uq_season_pick_week"),)
+
+    season_pick_id: Mapped[int] = mapped_column(ForeignKey("season_picks.id"))
+    week: Mapped[int] = mapped_column(Integer)
+    # False for a bye or any week the player or team did not have a game.
+    played: Mapped[bool] = mapped_column(Boolean, default=True)
+    # PLAYER_PROP: the stat recorded that week. TEAM_WINS: 1 win, 0 loss, 0.5 tie.
+    value: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+
+    season_pick: Mapped["SeasonPick"] = relationship(back_populates="weeks")

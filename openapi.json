@@ -1363,6 +1363,392 @@
           }
         }
       }
+    },
+    "/season_picks/season/{season_id}": {
+      "get": {
+        "tags": [
+          "SeasonPicks"
+        ],
+        "summary": "List Season Picks",
+        "operationId": "list_season_picks",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "season_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Season Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListSeasonPicksResponseData"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SeasonPicks"
+        ],
+        "summary": "Create Season Pick",
+        "operationId": "create_season_pick",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "season_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Season Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeasonPickRequestData"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonPickResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/season_picks/{pick_id}": {
+      "put": {
+        "tags": [
+          "SeasonPicks"
+        ],
+        "summary": "Update Season Pick",
+        "operationId": "update_season_pick",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pick Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeasonPickRequestData"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonPickResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "SeasonPicks"
+        ],
+        "summary": "Delete Season Pick",
+        "operationId": "delete_season_pick",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pick Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Season Pick"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/season_picks/{pick_id}/finalize": {
+      "put": {
+        "tags": [
+          "SeasonPicks"
+        ],
+        "summary": "Finalize Season Pick",
+        "operationId": "finalize_season_pick",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pick Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizeRequestData"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonPickResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/season_picks/{pick_id}/weeks/{week}": {
+      "put": {
+        "tags": [
+          "SeasonPicks"
+        ],
+        "summary": "Update Season Pick Week",
+        "operationId": "update_season_pick_week",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pick Id"
+            }
+          },
+          {
+            "name": "week",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Week"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeekProgressRequestData"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonPickResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/season_picks/{pick_id}/weeks": {
+      "put": {
+        "tags": [
+          "SeasonPicks"
+        ],
+        "summary": "Update Season Pick Weeks",
+        "operationId": "update_season_pick_weeks",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pick_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pick Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeeksProgressRequestData"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonPickResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1828,6 +2214,17 @@
         ],
         "title": "FinalizeParlayResultsResponseData"
       },
+      "FinalizeRequestData": {
+        "properties": {
+          "finalized": {
+            "type": "boolean",
+            "title": "Finalized",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "FinalizeRequestData"
+      },
       "GamblerAdvancedMetrics": {
         "properties": {
           "overall": {
@@ -2170,6 +2567,52 @@
           "state"
         ],
         "title": "ListGamblingSeasonEl"
+      },
+      "ListSeasonPicksResponseData": {
+        "properties": {
+          "season_picks": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonPickResponseData"
+            },
+            "type": "array",
+            "title": "Season Picks"
+          },
+          "season_long_picks_enabled": {
+            "type": "boolean",
+            "title": "Season Long Picks Enabled"
+          },
+          "weeks": {
+            "type": "integer",
+            "title": "Weeks"
+          },
+          "pick_count": {
+            "type": "integer",
+            "title": "Pick Count"
+          },
+          "latest_open_week": {
+            "type": "integer",
+            "title": "Latest Open Week"
+          },
+          "viewer_is_admin": {
+            "type": "boolean",
+            "title": "Viewer Is Admin"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season_picks",
+          "season_long_picks_enabled",
+          "weeks",
+          "pick_count",
+          "latest_open_week",
+          "viewer_is_admin",
+          "editable"
+        ],
+        "title": "ListSeasonPicksResponseData"
       },
       "LockParlayRequestData": {
         "properties": {
@@ -2881,6 +3324,231 @@
         "title": "ScoredMetrics",
         "description": "The sample a season's rules actually score on.\n\nBoth the whole-season metrics and a single slate bucket carry these three fields,\nso a corrector can return either and the client renders it without needing to know\nwhich. Keeps the stats shown beside a score from disagreeing with it."
       },
+      "SeasonPickKind": {
+        "type": "string",
+        "enum": [
+          "Player prop",
+          "Team wins"
+        ],
+        "title": "SeasonPickKind",
+        "description": "Season-long picks come in two shapes. Team win totals deliberately have no\nPropBetType member, which is what keeps them out of the parlay pick picker."
+      },
+      "SeasonPickProgress": {
+        "properties": {
+          "total": {
+            "type": "number",
+            "title": "Total"
+          },
+          "weeks_recorded": {
+            "type": "integer",
+            "title": "Weeks Recorded"
+          },
+          "weeks_played": {
+            "type": "integer",
+            "title": "Weeks Played"
+          },
+          "missing_weeks": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Missing Weeks"
+          },
+          "next_week_to_enter": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Week To Enter"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SeasonPickStatus"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonPickWeekProgress"
+            },
+            "type": "array",
+            "title": "Weeks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "weeks_recorded",
+          "weeks_played",
+          "missing_weeks",
+          "next_week_to_enter",
+          "status",
+          "weeks"
+        ],
+        "title": "SeasonPickProgress"
+      },
+      "SeasonPickRequestData": {
+        "properties": {
+          "gambler_id": {
+            "type": "integer",
+            "title": "Gambler Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SeasonPickKind"
+          },
+          "target": {
+            "$ref": "#/components/schemas/PropBetTargetRequestData"
+          },
+          "prop_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PropBetType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "type": "number",
+            "title": "Line"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/PropBetDirection"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gambler_id",
+          "kind",
+          "target",
+          "line",
+          "direction"
+        ],
+        "title": "SeasonPickRequestData"
+      },
+      "SeasonPickResponse": {
+        "properties": {
+          "season_pick": {
+            "$ref": "#/components/schemas/SeasonPickResponseData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season_pick"
+        ],
+        "title": "SeasonPickResponse"
+      },
+      "SeasonPickResponseData": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "gambler_id": {
+            "type": "integer",
+            "title": "Gambler Id"
+          },
+          "is_finalized": {
+            "type": "boolean",
+            "title": "Is Finalized"
+          },
+          "gambling_season_id": {
+            "type": "integer",
+            "title": "Gambling Season Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SeasonPickKind"
+          },
+          "prop_bet_target_id": {
+            "type": "integer",
+            "title": "Prop Bet Target Id"
+          },
+          "target_name": {
+            "type": "string",
+            "title": "Target Name"
+          },
+          "prop_bet_target": {
+            "$ref": "#/components/schemas/PropBetTargetResponseData"
+          },
+          "prop_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PropBetType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "type": "number",
+            "title": "Line"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/PropBetDirection"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/SeasonPickProgress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "gambler_id",
+          "is_finalized",
+          "gambling_season_id",
+          "kind",
+          "prop_bet_target_id",
+          "target_name",
+          "prop_bet_target",
+          "prop_type",
+          "line",
+          "direction",
+          "progress"
+        ],
+        "title": "SeasonPickResponseData"
+      },
+      "SeasonPickStatus": {
+        "type": "string",
+        "enum": [
+          "Pending",
+          "Hit",
+          "Missed"
+        ],
+        "title": "SeasonPickStatus"
+      },
+      "SeasonPickWeekProgress": {
+        "properties": {
+          "week": {
+            "type": "integer",
+            "title": "Week"
+          },
+          "played": {
+            "type": "boolean",
+            "title": "Played"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week",
+          "played",
+          "value"
+        ],
+        "title": "SeasonPickWeekProgress"
+      },
       "SetMetrics": {
         "properties": {
           "total": {
@@ -3497,6 +4165,74 @@
           "affirmative"
         ],
         "title": "VetoVoteResponseData"
+      },
+      "WeekEntry": {
+        "properties": {
+          "played": {
+            "type": "boolean",
+            "title": "Played",
+            "default": true
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "week": {
+            "type": "integer",
+            "title": "Week"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week"
+        ],
+        "title": "WeekEntry"
+      },
+      "WeekProgressRequestData": {
+        "properties": {
+          "played": {
+            "type": "boolean",
+            "title": "Played",
+            "default": true
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "title": "WeekProgressRequestData"
+      },
+      "WeeksProgressRequestData": {
+        "properties": {
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/WeekEntry"
+            },
+            "type": "array",
+            "title": "Weeks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "weeks"
+        ],
+        "title": "WeeksProgressRequestData",
+        "description": "Several weeks at once, so catching up a whole season is one request rather than\none per week \u2014 each of which would otherwise re-derive and re-send the progress."
       }
     },
     "securitySchemes": {

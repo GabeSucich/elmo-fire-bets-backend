@@ -21,7 +21,8 @@ from database import get_db
 from .auth import manager
 from .common import GamblerResponseData, ParlayResponseData, add_selects_to_parlay_query
 
-from services.season_performance_calculator import SeasonPerformanceCalculator, GamblerPerformance, get_season_score_corrector_class
+from services.season_performance_calculator import SeasonPerformanceCalculator, GamblerPerformance
+from services.season_rules import get_season_score_corrector_class
 from services.performance_time_series import TimeSeriesCalculator, TimeSeriesDatum
 from services.metric_calculator import GamblerMetricsCalculator
 

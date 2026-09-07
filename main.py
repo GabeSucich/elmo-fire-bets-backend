@@ -11,6 +11,7 @@ from routers.parlays import router as parlays_router
 from routers.corrections import router as corrections_router
 from routers.picks import router as pick_router
 from routers.vetoes import router as veto_router
+from routers.season_picks import router as season_picks_router
 
 app = FastAPI()
 
@@ -38,3 +39,4 @@ app.include_router(parlays_router)
 app.include_router(corrections_router)
 app.include_router(pick_router)
 app.include_router(veto_router)
+app.include_router(season_picks_router)

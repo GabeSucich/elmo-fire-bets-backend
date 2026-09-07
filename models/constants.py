@@ -21,6 +21,12 @@ class PropBetType(StrEnum):
     PASS_COMPLETIONS = "Pass Completions"
     SACKS = "Sacks"
 
+class SeasonPickKind(StrEnum):
+    """Season-long picks come in two shapes. Team win totals deliberately have no
+    PropBetType member, which is what keeps them out of the parlay pick picker."""
+    PLAYER_PROP = "Player prop"
+    TEAM_WINS = "Team wins"
+
 class SauceFactor(StrEnum):
     BITCH = "Bitch"
     SPICY = "Spicy"

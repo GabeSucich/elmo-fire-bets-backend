@@ -4,18 +4,8 @@ from pydantic import BaseModel
 
 from models import GamblingSeason, Parlay, ParlayState, PickVeto, Pick
 from .metric_counter import PickVetoPair
-from .score_correctors.score_corrector_2025 import GamblerScoreCorrector2025
-from .score_correctors.score_corrector_2026 import GamblerScoreCorrector2026
 from .score_correctors.score_corrector import GamblerScoreCorrector, ScoreCorrectionSet
 from .metric_calculator import GamblerMetricsCalculator, GamblerAdvancedMetrics, ScoredMetrics
-
-SCORE_CORRECTORS = {
-    2025: GamblerScoreCorrector2025,
-    2026: GamblerScoreCorrector2026,
-}
-
-def get_season_score_corrector_class(season_year: int):
-    return SCORE_CORRECTORS.get(season_year, GamblerScoreCorrector2025)
 
 class GamblerPerformance(BaseModel):
     gambler_id: int
