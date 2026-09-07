@@ -4,15 +4,20 @@ from pydantic import BaseModel
 
 from .season_performance_calculator import SeasonPerformanceCalculator
 from models import Pick, Parlay, ParlayState
-from .metric_calculator import GamblerBaseMetrics, GamblerMetricsCalculator
+from .metric_calculator import GamblerMetricsCalculator
 from .score_correctors.score_corrector import GamblerScoreCorrector
 from .common import PickVetoPair, get_gambler_picks_veto_pairs, pick_veto_pair_from_parlay
 
 class TimeSeriesDatum(BaseModel):
+    """One point on the score line.
+
+    Deliberately does not carry metrics. It used to embed a full GamblerBaseMetrics per
+    point, which meant a season shipped megabytes of per-target and per-prop breakdowns
+    to draw a line the client renders from corrected_score alone.
+    """
     gambler_id: int
     parlay_order: int
     parlay_id: int
-    metrics: GamblerBaseMetrics
     corrected_score: float
 
 class TimeSeriesCalculator:
@@ -43,7 +48,6 @@ class TimeSeriesCalculator:
                         gambler_id=gambler_id,
                         parlay_order=parlay.order,
                         parlay_id=parlay.id,
-                        metrics=calculator.get_base_metrics(),
                         corrected_score=gambler_performances[gambler_id].corrected_score
                     )
                 )

@@ -1763,25 +1763,6 @@
         ],
         "title": "BasicPickResult"
       },
-      "BetTypeMetrics": {
-        "properties": {
-          "bet_types": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PropBetTypeMetrics"
-            },
-            "propertyNames": {
-              "$ref": "#/components/schemas/PropBetType"
-            },
-            "type": "object",
-            "title": "Bet Types"
-          }
-        },
-        "type": "object",
-        "required": [
-          "bet_types"
-        ],
-        "title": "BetTypeMetrics"
-      },
       "ClaimParlayRequestData": {
         "properties": {
           "gambler_id": {
@@ -2225,54 +2206,6 @@
         "type": "object",
         "title": "FinalizeRequestData"
       },
-      "GamblerAdvancedMetrics": {
-        "properties": {
-          "overall": {
-            "$ref": "#/components/schemas/SetMetrics"
-          },
-          "TD": {
-            "$ref": "#/components/schemas/SetMetrics"
-          },
-          "non_TD": {
-            "$ref": "#/components/schemas/SetMetrics"
-          },
-          "non_TD_slate": {
-            "$ref": "#/components/schemas/SlateFilteredMetrics"
-          },
-          "TD_slate": {
-            "$ref": "#/components/schemas/SlateFilteredMetrics"
-          },
-          "sauce_factor": {
-            "$ref": "#/components/schemas/SauceFactorMetrics"
-          },
-          "direction": {
-            "$ref": "#/components/schemas/DirectionMetrics"
-          },
-          "veto_metrics": {
-            "$ref": "#/components/schemas/SetVetoMetrics"
-          },
-          "bet_types": {
-            "$ref": "#/components/schemas/BetTypeMetrics"
-          },
-          "prop_target_metrics": {
-            "$ref": "#/components/schemas/PropTargetMetrics"
-          }
-        },
-        "type": "object",
-        "required": [
-          "overall",
-          "TD",
-          "non_TD",
-          "non_TD_slate",
-          "TD_slate",
-          "sauce_factor",
-          "direction",
-          "veto_metrics",
-          "bet_types",
-          "prop_target_metrics"
-        ],
-        "title": "GamblerAdvancedMetrics"
-      },
       "GamblerBaseMetrics": {
         "properties": {
           "overall": {
@@ -2324,7 +2257,7 @@
             "title": "Corrected Score"
           },
           "metrics": {
-            "$ref": "#/components/schemas/GamblerAdvancedMetrics"
+            "$ref": "#/components/schemas/GamblerBaseMetrics"
           },
           "scored_metrics": {
             "$ref": "#/components/schemas/ScoredMetrics"
@@ -3179,54 +3112,6 @@
         ],
         "title": "PropBetType"
       },
-      "PropBetTypeMetrics": {
-        "properties": {
-          "overall": {
-            "$ref": "#/components/schemas/SetMetrics"
-          },
-          "sauce_factor": {
-            "$ref": "#/components/schemas/SauceFactorMetrics"
-          },
-          "direction_metrics": {
-            "$ref": "#/components/schemas/DirectionMetrics"
-          },
-          "vetoes": {
-            "$ref": "#/components/schemas/SetVetoMetrics"
-          }
-        },
-        "type": "object",
-        "required": [
-          "overall",
-          "sauce_factor",
-          "direction_metrics",
-          "vetoes"
-        ],
-        "title": "PropBetTypeMetrics"
-      },
-      "PropTargetMetrics": {
-        "properties": {
-          "prop_targets": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PropBetTypeMetrics"
-            },
-            "type": "object",
-            "title": "Prop Targets"
-          },
-          "target_names": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Target Names"
-          }
-        },
-        "type": "object",
-        "required": [
-          "prop_targets",
-          "target_names"
-        ],
-        "title": "PropTargetMetrics"
-      },
       "ReopenParlayRequestData": {
         "properties": {},
         "type": "object",
@@ -3292,6 +3177,10 @@
           "adjustment": {
             "type": "number",
             "title": "Adjustment"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
           }
         },
         "type": "object",
@@ -3299,7 +3188,8 @@
           "identifier",
           "name",
           "associated_value",
-          "adjustment"
+          "adjustment",
+          "summary"
         ],
         "title": "ScoreCorrection"
       },
@@ -3882,9 +3772,6 @@
             "type": "integer",
             "title": "Parlay Id"
           },
-          "metrics": {
-            "$ref": "#/components/schemas/GamblerBaseMetrics"
-          },
           "corrected_score": {
             "type": "number",
             "title": "Corrected Score"
@@ -3895,10 +3782,10 @@
           "gambler_id",
           "parlay_order",
           "parlay_id",
-          "metrics",
           "corrected_score"
         ],
-        "title": "TimeSeriesDatum"
+        "title": "TimeSeriesDatum",
+        "description": "One point on the score line.\n\nDeliberately does not carry metrics. It used to embed a full GamblerBaseMetrics per\npoint, which meant a season shipped megabytes of per-target and per-prop breakdowns\nto draw a line the client renders from corrected_score alone."
       },
       "UnlockParlayRequestData": {
         "properties": {},

@@ -2,14 +2,14 @@ from typing import *
 
 from models import Parlay
 from services.metric_calculator import ScoredMetrics
-from .score_corrector import GamblerScoreCorrector, GamblerScoreCorrections, ScoreCorrectionSet, ScoreCorrection
+from .score_corrector import counted, GamblerScoreCorrector, GamblerScoreCorrections, ScoreCorrectionSet, ScoreCorrection
 
 if TYPE_CHECKING:
     from services.metric_calculator import GamblerBaseMetrics
 
-MOST_BITCH_LOSSES_DATA = ["most-bitch-losses", "Most bitch losses"]
-MOST_BOZOS_DATA = ["most-bozos", "Most bozos"]
-MOST_SPICY_HITS_DATA = ["most-spicy-hits", "Most spicy hits"]
+MOST_BITCH_LOSSES_DATA = ["most-bitch-losses", "Most bitch losses", "bitch loss", "bitch losses"]
+MOST_BOZOS_DATA = ["most-bozos", "Most bozos", "bozo", "bozos"]
+MOST_SPICY_HITS_DATA = ["most-spicy-hits", "Most spicy hits", "spicy hit", "spicy hits"]
 
 class GamblerScoreCorrector2025(GamblerScoreCorrector):
 
@@ -54,6 +54,7 @@ class GamblerScoreCorrector2025(GamblerScoreCorrector):
                 identifier=MOST_BOZOS_DATA[0],
                 name=MOST_BOZOS_DATA[1],
                 associated_value=max_bozo_cnt,
+                summary=counted(max_bozo_cnt, MOST_BOZOS_DATA[2], MOST_BOZOS_DATA[3]),
                 adjustment=-2
             )
             corrections[gambler_id] = {**existing, MOST_BOZOS_DATA[0]: score_correction}
@@ -64,6 +65,7 @@ class GamblerScoreCorrector2025(GamblerScoreCorrector):
                 identifier=MOST_BITCH_LOSSES_DATA[0],
                 name=MOST_BITCH_LOSSES_DATA[1],
                 associated_value=max_bitch_losses,
+                summary=counted(max_bitch_losses, MOST_BITCH_LOSSES_DATA[2], MOST_BITCH_LOSSES_DATA[3]),
                 adjustment=-2
             )
             corrections[gambler_id] = {**existing, MOST_BITCH_LOSSES_DATA[0]: score_correction}
@@ -89,7 +91,8 @@ class GamblerScoreCorrector2025(GamblerScoreCorrector):
             identifier=MOST_SPICY_HITS_DATA[0],
             name=MOST_SPICY_HITS_DATA[1],
             adjustment=2,
-            associated_value=max_spicy_wins
+            associated_value=max_spicy_wins,
+            summary=counted(max_spicy_wins, MOST_SPICY_HITS_DATA[2], MOST_SPICY_HITS_DATA[3])
         )
         
         return {gambler_id: {MOST_SPICY_HITS_DATA[0]: score_correction} for gambler_id in gamblers_with_most_spicy_wins}
