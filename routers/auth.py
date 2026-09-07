@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 
 from pydantic import BaseModel
 
@@ -14,7 +15,16 @@ from passlib.hash import bcrypt
 from models import User, Gambler
 from utils.env_vars import EnvVarName, load_env_var
 
-manager = LoginManager(load_env_var(EnvVarName.SECRET), token_url="/auth/login")
+# fastapi-login defaults to a 15 minute token, which logged people out mid-session.
+# This is a private league app, not a bank: a long session is the right trade, and the
+# client re-authenticates from stored credentials when a token does finally lapse.
+TOKEN_LIFETIME = datetime.timedelta(days=30)
+
+manager = LoginManager(
+    load_env_var(EnvVarName.SECRET),
+    token_url="/auth/login",
+    default_expiry=TOKEN_LIFETIME,
+)
 
 router = APIRouter(tags=["Auth"])
 
@@ -57,6 +67,6 @@ async def login(data: LoginRequestData) -> LoginResponseData:
     user = await load_user(data.username)
     if not verify_password(data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid password")
-    token = manager.create_access_token(data={"sub": user.username})
+    token = manager.create_access_token(data={"sub": user.username}, expires=TOKEN_LIFETIME)
     return LoginResponseData(user_id=user.id, first_name=user.first_name, last_name=user.last_name, token=token)
             

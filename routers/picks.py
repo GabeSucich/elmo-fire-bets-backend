@@ -128,19 +128,26 @@ async def update_pick(
     if pick.corrected_line:
         raise HTTPException(status_code=500, detail="Cannot update a pick after an override has been applied!")
 
+    # Which keys the client actually sent, as opposed to which happen to be None.
+    # A partial update cannot use truthiness here: clearing the sauce factor means
+    # sending null, and `if body.sauce_factor` treats that exactly like omitting it,
+    # so a spicy or bitch designation could never be removed.
+    provided = body.model_fields_set
+
     target_id = (await get_or_create_prop_bet_target(body.target, db)).id if body.target else None
     delete_veto = False
     if target_id:
         pick.prop_bet_target_id = target_id
         delete_veto = True
-    if body.direction:
+    if body.direction is not None:
         pick.direction = body.direction
         delete_veto = True
-    if body.line:
+    if body.line is not None:
         pick.line = body.line
-    if body.sauce_factor:
+    if "sauce_factor" in provided:
+        # None is a real value here: it means neither spicy nor bitch.
         pick.sauce_factor = body.sauce_factor
-    if body.prop_type:
+    if body.prop_type is not None:
         pick.prop_type = body.prop_type
         delete_veto = True
     
@@ -179,15 +186,19 @@ async def apply_pick_override(
     if not user_can_override_picks(parlay, user):
             raise HTTPException(status_code=500, detail="Only the parlay owner can override picks!")
     
+    # Same as update_pick: null is a real value for sauce_factor, so the field has to be
+    # keyed off whether the client sent it rather than off whether it is truthy.
+    provided = body.model_fields_set
+
     if body.target:
         pick.prop_bet_target_id = (await get_or_create_prop_bet_target(body.target, db)).id
-    if body.prop_type:
+    if body.prop_type is not None:
         pick.prop_type = body.prop_type
-    if body.direction:
+    if body.direction is not None:
         pick.direction = body.direction
     if body.line is not None:
         pick.corrected_line = body.line
-    if body.sauce_factor:
+    if "sauce_factor" in provided:
         pick.sauce_factor = body.sauce_factor
     if body.delete_veto:
         for veto in pick.vetoes:

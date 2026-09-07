@@ -16,6 +16,8 @@ class PropBetType(StrEnum):
     PASSING_INTS = "Passing Ints"
     PASSING_YDS = "Passing Yds"
     TDS = "TDs"
+    RUSHING_TDS = "Rush TDs"
+    RECEIVING_TDS = "Rec TDs"
     RECEPTIONS = "Receptions"
     LONGEST_COMPLETION = "Longest Completion"
     PASS_COMPLETIONS = "Pass Completions"
