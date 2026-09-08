@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
 from models import (
+    PICK_REACTION_EMOJI,
+    PickComment,
+    PickReaction,
     VetoVote,
     VetoApprovalStatus,
     VetoResult,
@@ -90,6 +93,47 @@ class PropBetTargetResponseData(BaseModel):
             identifier=model.identifier
         )
 
+def summarize_reactions(reactions: list[PickReaction]) -> list["PickReactionResponseData"]:
+    """Group a pick's reaction rows by emoji, in palette order.
+
+    Palette order rather than first-appearance, so a chip cannot move under the reader's
+    finger. First-appearance looked stable but is not: an emoji's place came from its
+    earliest *surviving* row, so the last person to react with it leaving would slide the
+    chip down past the ones added after them.
+
+    Palette order also lets the client compute the result of a tap exactly, which is what
+    makes the optimistic update land on the same array this returns.
+
+    Reactions no longer in the palette keep their rows and sort after it, in the order they
+    first appeared — the sort is stable, and grouping already runs oldest row first.
+
+    Computed here from the loaded collection rather than queried: from_model runs once per
+    pick per parlay on the list endpoints, so anything doing I/O would be an N+1.
+    """
+    grouped: dict[str, list[int]] = {}
+    for reaction in sorted(reactions, key=lambda r: r.id):
+        grouped.setdefault(reaction.emoji, []).append(reaction.gambler_id)
+
+    rank = {emoji: i for i, emoji in enumerate(PICK_REACTION_EMOJI)}
+    return [
+        PickReactionResponseData(emoji=emoji, gambler_ids=ids)
+        for emoji, ids in sorted(grouped.items(), key=lambda kv: rank.get(kv[0], len(rank)))
+    ]
+
+
+class PickReactionResponseData(BaseModel):
+    """Everyone who left one emoji on one pick.
+
+    The ids rather than a count, deliberately. The season context already has every
+    gambler by id, so the client derives the count, whether the reader is in it, and the
+    names for the drawer from this one field — which is why PickResponseData.from_model
+    needs no notion of who is asking, and why "who reacted" needs no second request.
+    A league is a handful of people; the list is smaller than a count plus a viewer flag.
+    """
+    emoji: str
+    gambler_ids: list[int]
+
+
 class PickResponseData(BaseModel):
     id: int
     gambler_id: int
@@ -101,6 +145,8 @@ class PickResponseData(BaseModel):
     veto: Optional[PickVetoResponseData]
     prop_bet_target: PropBetTargetResponseData
     prop_type: PropBetType
+    reactions: list[PickReactionResponseData]
+    comment_count: int
 
     @classmethod
     def from_model(cls, model: Pick):
@@ -116,7 +162,9 @@ class PickResponseData(BaseModel):
             result=model.result,
             prop_type=model.prop_type,
             veto=PickVetoResponseData.from_model(veto) if veto else None,
-            prop_bet_target=PropBetTargetResponseData.from_model(model.prop_bet_target)
+            prop_bet_target=PropBetTargetResponseData.from_model(model.prop_bet_target),
+            reactions=summarize_reactions(model.reactions),
+            comment_count=len([c for c in model.comments if c.archived_at is None]),
         )
 
 class ParlayResponseData(BaseModel):
@@ -242,6 +290,15 @@ def add_selects_to_parlay_query(select: Select[Tuple[Parlay]]):
             .selectinload(Pick.vetoes)
             .selectinload(PickVeto.votes)
         ).options(
+            # Two extra queries for the whole page however many picks it holds, which is
+            # what keeps the reaction chips and the reply count off the N+1 path. Also load
+            # bearing for delete_parlay: the cascade to these cannot lazy-load under async.
+            selectinload(Parlay.picks)
+            .selectinload(Pick.reactions)
+        ).options(
+            selectinload(Parlay.picks)
+            .selectinload(Pick.comments)
+        ).options(
             selectinload(Parlay.picks)
             .selectinload(Pick.prop_bet_target)
         ).options(
@@ -281,7 +338,16 @@ async def query_pick_with_selects(pick_id: int, db: AsyncSession):
             .selectinload(PickVeto.votes)
         ).options(
             selectinload(Pick.prop_bet_target)
+        ).options(
+            selectinload(Pick.reactions)
+        ).options(
+            selectinload(Pick.comments)
         )
+        # The session is expire_on_commit=False, so a pick already in the identity map
+        # keeps the collections it was loaded with. Every caller re-queries *after* a
+        # commit precisely to build a fresh response, so without this a reaction toggle
+        # answers with the state from before it.
+        .execution_options(populate_existing=True)
     )
 
 def map_pick_result_to_veto_result(pick_result: PickResult, all_picks_right=False) -> VetoResult:

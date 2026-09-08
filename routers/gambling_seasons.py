@@ -15,7 +15,8 @@ from models import (
     Parlay,
     Pick,
     ParlayState,
-    User
+    User,
+    PICK_REACTION_EMOJI
 )
 from database import get_db
 from .auth import manager
@@ -67,6 +68,10 @@ class GetGamblingSeasonResponseData(BaseModel):
     year: int
     state: GamblingSeasonState
     gamblers: dict[int, GamblerResponseData]
+    # The emoji a pick can be reacted with. Sent from the server rather than held as a
+    # second copy in the client, so the picker cannot offer something the write would
+    # reject. Rides on the season response, which is already fetched once on entry.
+    reaction_palette: list[str]
 
 @router.get("/{season_id}", operation_id="get_gambling_season", response_model=GetGamblingSeasonResponseData)
 async def get_gambling_season(season_id: int, db: AsyncSession=Depends(get_db), user: UserModel = Depends(manager)):
@@ -90,7 +95,8 @@ async def get_gambling_season(season_id: int, db: AsyncSession=Depends(get_db), 
         name=season.name,
         year=season.year,
         state=season.state,
-        gamblers=all_gamblers
+        gamblers=all_gamblers,
+        reaction_palette=list(PICK_REACTION_EMOJI)
     )
 
 class GetSeasonParlaysResponseData(BaseModel):
@@ -119,17 +125,13 @@ async def get_season_parlays(
         query = query.where(Parlay.state == state)
     query_sort = Parlay.order.desc() if sort == GetSeasonParlaysSortParam.DESC else Parlay.order.asc()
     result = await db.execute(
-        query
-        .order_by(query_sort)
-        .limit(limit)
-        .offset(offset)
-        .options(
-            selectinload(Parlay.picks)
-            .selectinload(Pick.vetoes)
-            .selectinload(PickVeto.votes)
-        ).options(
-            selectinload(Parlay.picks)
-            .selectinload(Pick.prop_bet_target)
+        # The shared helper rather than a hand-rolled copy of its options: this listing is
+        # the one place a missing eager load turns into an N+1 across every pick on screen.
+        add_selects_to_parlay_query(
+            query
+            .order_by(query_sort)
+            .limit(limit)
+            .offset(offset)
         )
     )
     parlays = result.scalars().all()

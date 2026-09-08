@@ -38,6 +38,21 @@ router = APIRouter(
     tags=["Picks"]
 )
 
+async def discard_responses_to_pick(pick: Pick, db: AsyncSession):
+    """Drop everything that was a response to this pick as it stood.
+
+    A veto, a 🔥 and a reply all answered a specific bet. Once the target, the direction or
+    the market has changed it is a different bet, and carrying them over would attribute
+    reactions to something nobody actually reacted to.
+    """
+    for veto in pick.vetoes:
+        await db.delete(veto)
+    for reaction in pick.reactions:
+        await db.delete(reaction)
+    for comment in pick.comments:
+        await db.delete(comment)
+
+
 # Deliberately not async: it does no I/O, and as a coroutine it was being called without
 # await at both call sites — `not <coroutine>` is always False, so this guard never fired
 # and anyone in the season could edit picks on a locked parlay.
@@ -135,13 +150,15 @@ async def update_pick(
     provided = body.model_fields_set
 
     target_id = (await get_or_create_prop_bet_target(body.target, db)).id if body.target else None
-    delete_veto = False
+    # True once this is no longer the bet anyone responded to. Moving the line alone does
+    # not count, which is why it is tracked rather than inferred from `provided`.
+    bet_changed = False
     if target_id:
         pick.prop_bet_target_id = target_id
-        delete_veto = True
+        bet_changed = True
     if body.direction is not None:
         pick.direction = body.direction
-        delete_veto = True
+        bet_changed = True
     if body.line is not None:
         pick.line = body.line
     if "sauce_factor" in provided:
@@ -149,11 +166,10 @@ async def update_pick(
         pick.sauce_factor = body.sauce_factor
     if body.prop_type is not None:
         pick.prop_type = body.prop_type
-        delete_veto = True
+        bet_changed = True
     
-    if delete_veto:
-        for veto in pick.vetoes:
-            await db.delete(veto)
+    if bet_changed:
+        await discard_responses_to_pick(pick, db)
     
     await db.commit()
     await db.refresh(pick)
@@ -201,8 +217,7 @@ async def apply_pick_override(
     if "sauce_factor" in provided:
         pick.sauce_factor = body.sauce_factor
     if body.delete_veto:
-        for veto in pick.vetoes:
-            await db.delete(veto)
+        await discard_responses_to_pick(pick, db)
     
     await db.commit()
     pick = (await query_pick_with_selects(pick.id, db)).scalar_one()

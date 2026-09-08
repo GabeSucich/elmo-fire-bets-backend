@@ -2,7 +2,7 @@ import datetime
 from typing import *
 
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -408,13 +408,18 @@ async def list_feedback_votes(
 @router.get("/{feedback_id}/comments", operation_id="list_feedback_comments", response_model=ListFeedbackCommentsResponseData)
 async def list_feedback_comments(
     feedback_id: int,
+    after: datetime.datetime | None = Query(
+        None,
+        description="Only replies created after this. Send back a created_at from a previous "
+                    "response verbatim; used by the open drawer to poll for new replies.",
+    ),
     user: User = Depends(manager),
     db: AsyncSession = Depends(get_db),
 ) -> ListFeedbackCommentsResponseData:
     feedback = await load_feedback(feedback_id, db)
     viewer = await viewer_gambler(feedback.gambler.gambling_season_id, user, db)
 
-    comments = list((await db.execute(
+    query = (
         select(FeedbackComment)
         .where(FeedbackComment.feedback_id == feedback_id, FeedbackComment.archived_at.is_(None))
         .options(selectinload(FeedbackComment.gambler).selectinload(Gambler.user))
@@ -422,7 +427,16 @@ async def list_feedback_comments(
         # the bottom, so a new reply appears directly above where it was typed.
         .order_by(FeedbackComment.created_at.asc())
         .execution_options(populate_existing=True)
-    )).scalars())
+    )
+    if after is not None:
+        # Timestamps are stored naive UTC, so an offset-aware value from the client is
+        # converted and flattened before it reaches the column. Comparing an aware value
+        # against a naive one silently asks about the wrong instant.
+        if after.tzinfo is not None:
+            after = after.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        query = query.where(FeedbackComment.created_at > after)
+
+    comments = list((await db.execute(query)).scalars())
 
     return ListFeedbackCommentsResponseData(comments=[
         FeedbackCommentResponseData(

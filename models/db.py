@@ -71,6 +71,15 @@ class Pick(Base):
     vetoes: Mapped[list["PickVeto"]] = relationship(back_populates="pick", cascade="all, delete-orphan")
     parlay: Mapped["Parlay"] = relationship(back_populates="picks")
     prop_bet_target: Mapped["PropBetTarget"] = relationship(back_populates="picks")
+    # Cascaded rather than left to the database: deleting a parlay cascades to its picks,
+    # and async SQLAlchemy cannot lazy-load a collection mid-cascade — which is why both
+    # of these have to stay in the parlay query's eager loads.
+    reactions: Mapped[list["PickReaction"]] = relationship(
+        back_populates="pick", cascade="all, delete-orphan"
+    )
+    comments: Mapped[list["PickComment"]] = relationship(
+        back_populates="pick", cascade="all, delete-orphan"
+    )
 
 class PickVeto(Base):
     __tablename__ = "pick_vetoes"
@@ -94,6 +103,42 @@ class VetoVote(Base):
     veto: Mapped[PickVeto] = relationship(back_populates="votes")
 
     
+
+class PickReaction(Base):
+    """One gambler's emoji on one pick.
+
+    Unique on the emoji as well as the gambler, which is what separates this from the
+    single up-or-down FeedbackRating it is modelled on: several different reactions may sit
+    on the same pick from the same person, and tapping one you already left takes it back.
+    """
+    __tablename__ = "pick_reactions"
+    __table_args__ = (
+        UniqueConstraint("pick_id", "gambler_id", "emoji", name="uq_pick_reaction_gambler_emoji"),
+    )
+
+    pick_id: Mapped[int] = mapped_column(ForeignKey("picks.id"))
+    gambler_id: Mapped[int] = mapped_column(ForeignKey("gamblers.id"))
+    # A plain string, deliberately not an enum. See PICK_REACTION_EMOJI: the palette is
+    # validated on write but stored loosely, so retiring an emoji never orphans old rows.
+    emoji: Mapped[str] = mapped_column(String(16))
+
+    pick: Mapped["Pick"] = relationship(back_populates="reactions")
+
+
+class PickComment(Base):
+    """A reply on one pick. The same shape as FeedbackComment, on a different parent."""
+    __tablename__ = "pick_comments"
+
+    pick_id: Mapped[int] = mapped_column(ForeignKey("picks.id"))
+    gambler_id: Mapped[int] = mapped_column(ForeignKey("gamblers.id"))
+    comment: Mapped[str] = mapped_column(Text)
+    # Deleted by its author. Kept rather than removed so the thread around it is not
+    # renumbered, and left out of reply counts.
+    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+    pick: Mapped["Pick"] = relationship(back_populates="comments")
+    gambler: Mapped["Gambler"] = relationship()
+
 
 class Parlay(Base):
     __tablename__ = "parlays"

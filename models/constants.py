@@ -85,3 +85,32 @@ class SlateType(StrEnum):
     WILDCARD = "Wildcard"
     DIVISIONAL = "Divisional"
     CONFERENCE = "Conference"
+
+# The emoji that can be dropped on a pick.
+#
+# A tuple rather than a StrEnum, and stored in a String column rather than a SQLEnum:
+# growing this set should be a code change, not an ALTER TYPE against production, and an
+# emoji-valued enum generates unusable member names in the TypeScript client (the same
+# problem the feedback vote enum has, where the members come out as `_1` and `_-1`).
+#
+# Shipped to the client on the season response so the picker and the validation below can
+# never disagree about what the palette is.
+PICK_REACTION_EMOJI = (
+    "\U0001F525",  # fire
+    "\u2764\uFE0F",  # heart
+    "\U0001F3AF",  # bullseye
+    "\U0001FAE1",  # saluting
+    "\U0001F64F",  # praying
+    "\U0001F602",  # crying laughing
+    "\U0001F440",  # eyes
+    "\U0001F336\uFE0F",  # hot pepper
+    "\U0001F9CA",  # ice
+    "\U0001F921",  # clown
+    "\U0001F4A9",  # pile of poo
+    "\U0001F92E",  # vomiting
+    "\U0001F480",  # skull
+    # Last, deliberately: a verdict rather than a reaction, and the two people reach for
+    # without thinking. Kept off the front so they do not crowd out everything else.
+    "\U0001F44D",  # thumbs up
+    "\U0001F44E",  # thumbs down
+)
