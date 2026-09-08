@@ -5,7 +5,7 @@ from datetime import date
 from pydantic import BaseModel
 
 from sqlalchemy import Select, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
@@ -285,6 +285,14 @@ async def check_season_in_progress(gambling_season_id: int, db: AsyncSession):
 
 
 def add_selects_to_parlay_query(select: Select[Tuple[Parlay]]):
+    """Everything a parlay response needs, in as few round trips as it can be had in.
+
+    Round trips are the whole cost here, not rows: the app server and the database sit in
+    different regions, so each one is a cross-country trip and ten of them is seconds of
+    doing nothing. So the rule is joinedload for anything to-one — it folds into the query
+    that is already going — and selectinload only for collections, where a join would
+    multiply the parent rows and break the limit on the outer query.
+    """
     return select.options(
             selectinload(Parlay.picks)
             .selectinload(Pick.vetoes)
@@ -299,15 +307,18 @@ def add_selects_to_parlay_query(select: Select[Tuple[Parlay]]):
             selectinload(Parlay.picks)
             .selectinload(Pick.comments)
         ).options(
+            # A pick has one target, so this rides along on the picks query instead of
+            # costing one of its own.
             selectinload(Parlay.picks)
-            .selectinload(Pick.prop_bet_target)
+            .joinedload(Pick.prop_bet_target)
         ).options(
-            selectinload(Parlay.owner)
+            joinedload(Parlay.owner)
         ).options(
-            selectinload(Parlay.gambling_season)
+            joinedload(Parlay.gambling_season)
             .selectinload(GamblingSeason.gamblers)
-            .selectinload(Gambler.user)
+            .joinedload(Gambler.user)
         )
+
 
 async def query_parlay_with_selects(parlay_id: int, db: AsyncSession):
     return await db.execute(
