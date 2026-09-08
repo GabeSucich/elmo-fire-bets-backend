@@ -1,7 +1,7 @@
 import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Float, ForeignKey, Enum as SQLEnum, Integer, String, UniqueConstraint, null
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Enum as SQLEnum, Integer, String, Text, UniqueConstraint, null
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -160,3 +160,73 @@ class SeasonPickWeek(Base):
     value: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 
     season_pick: Mapped["SeasonPick"] = relationship(back_populates="weeks")
+
+
+class FeedbackStatus(StrEnum):
+    OPEN = "Open"
+    # Dealt with. The suggestion was built, or the problem it named is gone.
+    RESOLVED = "Resolved"
+    # Considered and declined. Kept rather than deleted so the same one does not come
+    # back round every season with nobody remembering it was already answered.
+    RETIRED = "Retired"
+
+
+class Feedback(Base):
+    """A suggestion or piece of feedback, raised within a season.
+
+    Keyed to a gambler, which is a user within one season — so the season it belongs to
+    comes for free, and so does the question of who may resolve it.
+    """
+    __tablename__ = "feedback"
+
+    gambler_id: Mapped[int] = mapped_column(ForeignKey("gamblers.id"))
+    # Written from the description on submission and editable afterwards, so the list can
+    # be scanned without reading every suggestion in full.
+    title: Mapped[str] = mapped_column(String(80))
+    comment: Mapped[str] = mapped_column(Text)
+    # Set by an admin. Anything other than OPEN is settled: it moves to its own tab and
+    # stops taking votes and replies.
+    status: Mapped[FeedbackStatus] = mapped_column(
+        SQLEnum(FeedbackStatus), default=FeedbackStatus.OPEN, server_default=FeedbackStatus.OPEN.name
+    )
+    # Deleted by its author. Kept rather than removed so replies and votes are not orphaned.
+    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+    gambler: Mapped["Gambler"] = relationship()
+    comments: Mapped[list["FeedbackComment"]] = relationship(
+        back_populates="feedback", cascade="all, delete-orphan"
+    )
+    ratings: Mapped[list["FeedbackRating"]] = relationship(
+        back_populates="feedback", cascade="all, delete-orphan"
+    )
+
+
+class FeedbackComment(Base):
+    __tablename__ = "feedback_comments"
+
+    feedback_id: Mapped[int] = mapped_column(ForeignKey("feedback.id"))
+    gambler_id: Mapped[int] = mapped_column(ForeignKey("gamblers.id"))
+    comment: Mapped[str] = mapped_column(Text)
+    # Deleted by its author. Archived comments are hidden and left out of reply counts.
+    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+    feedback: Mapped["Feedback"] = relationship(back_populates="comments")
+    gambler: Mapped["Gambler"] = relationship()
+
+
+class FeedbackRating(Base):
+    """One gambler's vote on one suggestion, up or down.
+
+    A vote is a row, so there is at most one per gambler per suggestion and taking it back is a
+    delete. The backlog is ranked on the sum of these, which is why the direction lives in
+    the row rather than in two separate tallies.
+    """
+    __tablename__ = "feedback_ratings"
+    __table_args__ = (UniqueConstraint("feedback_id", "gambler_id", name="uq_feedback_rating_gambler"),)
+
+    feedback_id: Mapped[int] = mapped_column(ForeignKey("feedback.id"))
+    gambler_id: Mapped[int] = mapped_column(ForeignKey("gamblers.id"))
+    # +1 or -1. Rows predating downvotes were all upvotes, hence the server default.
+    value: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    feedback: Mapped["Feedback"] = relationship(back_populates="ratings")
