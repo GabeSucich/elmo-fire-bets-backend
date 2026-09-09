@@ -20,5 +20,9 @@ dependencies = [
     "requests>=2.32.5",
     "sqlalchemy>=2.0.46",
     "sqlmodel>=0.0.31",
+    # The IANA zone database. services/odds/client resolves America/Los_Angeles at import,
+    # and a slim container image need not ship system tzdata — without this the lookup
+    # raises and the whole app fails to boot rather than merely getting a slate wrong.
+    "tzdata>=2025.2",
     "uvicorn>=0.39.0",
 ]
