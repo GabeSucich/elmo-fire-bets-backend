@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import os
+import zoneinfo
 
 import requests
 
@@ -17,9 +18,32 @@ TIMEOUT_SECONDS = 45
 # Comfortably above the biggest NFL day, so a slate never needs paging.
 PAGE_LIMIT = 100
 
+# A slate is a day in the league's own reckoning, not in UTC. This matters because UTC
+# midnight falls at 5pm Pacific, in the middle of the evening kickoff: every primetime game
+# starts 15 to 35 minutes after it. Filtering on the bare date therefore cut Sunday's slate
+# off before Sunday Night Football and filed that game under Monday, so a Sunday lay showed
+# no evening game at all and a Monday lay showed nothing but the night before's.
+#
+# Pacific rather than Eastern because the app already reads kickoffs in Pacific everywhere
+# else, and because the later zone is the one that keeps a whole slate on one date.
+PACIFIC = zoneinfo.ZoneInfo("America/Los_Angeles")
+
 
 def _key() -> str:
     return load_env_var(EnvVarName.SPORTSODDS_API_KEY)
+
+
+def _day_bounds(date: datetime.date) -> tuple[str, str]:
+    """The instants a Pacific day begins and ends, as the API wants them.
+
+    Computed through the zone rather than by subtracting a fixed offset: the season runs
+    from September into February and crosses out of daylight saving in November, so the
+    offset is -7 for part of it and -8 for the rest.
+    """
+    start = datetime.datetime.combine(date, datetime.time.min, tzinfo=PACIFIC)
+    end = start + datetime.timedelta(days=1)
+    as_utc = lambda d: d.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return as_utc(start), as_utc(end)
 
 
 def _fixture_for(date: datetime.date) -> list[dict] | None:
@@ -58,18 +82,22 @@ def fetch_slate(date: datetime.date) -> list[dict] | None:
 
     One date rather than one week, because billing is per event returned. A Thursday costs
     one entity where the surrounding week would cost fifteen.
+
+    The date is a Pacific day, so an evening kickoff belongs to the day it is played on
+    rather than to the following one — see PACIFIC.
     """
     fixture = _fixture_for(date)
     if fixture is not None:
         return fixture
 
+    starts_after, starts_before = _day_bounds(date)
     try:
         response = requests.get(
             EVENTS_URL,
             params={
                 "leagueID": "NFL",
-                "startsAfter": date.isoformat(),
-                "startsBefore": (date + datetime.timedelta(days=1)).isoformat(),
+                "startsAfter": starts_after,
+                "startsBefore": starts_before,
                 "limit": PAGE_LIMIT,
             },
             headers={"X-Api-Key": _key()},
