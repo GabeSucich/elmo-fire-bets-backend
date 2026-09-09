@@ -49,7 +49,15 @@ class GamblingSeason(Base):
 class PropBetTarget(Base):
     __tablename__ = "prop_bet_targets"
 
+    # ESPN's uuid, from the search that created this row. Opaque: it cannot be searched on
+    # and the stats endpoints reject it, so it identifies the target for us but is no use
+    # for fetching anything.
     identifier: Mapped[str] = mapped_column(String, unique=True, index=True)
+    # ESPN's numeric athlete id, which is what every stats endpoint actually wants. It
+    # arrives in the same search response the identifier does. Nullable because rows
+    # created before this existed have to be filled in by name, which the sync does the
+    # first time it needs one.
+    espn_athlete_id: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
     player_name: Mapped[str] = mapped_column(String, nullable=True, default=None)
     team_name: Mapped[str]
     picks: Mapped[list["Pick"]] = relationship(back_populates="prop_bet_target")

@@ -22,6 +22,7 @@ from services.season_pick_progress import SeasonPickProgress, build_progress
 from services.season_rules import SeasonRules, get_season_rules, latest_open_week
 
 from .auth import manager
+from services.espn.sync import sync_season_picks
 from .common import PropBetTargetRequestData, PropBetTargetResponseData, get_or_create_prop_bet_target
 
 router = APIRouter(
@@ -405,3 +406,49 @@ async def update_season_pick_weeks(
     return SeasonPickResponse(season_pick=SeasonPickResponseData.from_model(
         await query_season_pick(pick_id, db), rules
     ))
+
+
+class SyncSeasonPicksResponseData(BaseModel):
+    """What the sweep did, rather than a bare success.
+
+    A sync that quietly matched nothing looks identical to one that worked unless it says
+    how much it touched — and `skipped` names the picks ESPN could not answer for, which
+    is the list worth acting on.
+    """
+    picks_seen: int
+    picks_synced: int
+    weeks_written: int
+    weeks_updated: int
+    skipped: list[str]
+
+
+@router.post(
+    "/season/{season_id}/sync",
+    operation_id="sync_season_picks",
+    response_model=SyncSeasonPicksResponseData,
+)
+async def sync_season_picks_endpoint(
+    season_id: int,
+    user: User = Depends(manager),
+    db: AsyncSession = Depends(get_db),
+) -> SyncSeasonPicksResponseData:
+    """Pull every season pick in this season up to date with ESPN.
+
+    Admin only: it rewrites results across everyone's picks at once, including weeks that
+    were entered by hand. Slow by nature — one ESPN call per distinct player or team — so
+    it is a deliberate action rather than something a screen triggers on load.
+
+    The same work runs on a schedule; this is the way to force it early, or to recover
+    after ESPN was unreachable when the scheduled run went out.
+    """
+    season = await load_season(season_id, db)
+    require_admin(season, user)
+
+    report = await sync_season_picks(season_id, db)
+    return SyncSeasonPicksResponseData(
+        picks_seen=report.picks_seen,
+        picks_synced=report.picks_synced,
+        weeks_written=report.weeks_written,
+        weeks_updated=report.weeks_updated,
+        skipped=report.skipped,
+    )

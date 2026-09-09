@@ -71,6 +71,7 @@ async def create_parlay(
     await db.commit()
     await db.refresh(parlay)
     response_parlay = (await query_parlay_with_selects(parlay.id, db)).scalar_one()
+
     return CreateParlayResponseData(
         parlay=ParlayResponseData.from_model(response_parlay)
     )
