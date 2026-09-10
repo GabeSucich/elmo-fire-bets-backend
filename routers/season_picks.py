@@ -438,8 +438,9 @@ async def sync_season_picks_endpoint(
     were entered by hand. Slow by nature — one ESPN call per distinct player or team — so
     it is a deliberate action rather than something a screen triggers on load.
 
-    The same work runs on a schedule; this is the way to force it early, or to recover
-    after ESPN was unreachable when the scheduled run went out.
+    The only way the sweep runs: nothing else calls it. Weeks stay as they were until an
+    admin presses this, so a spell of ESPN being unreachable is recovered by pressing it
+    again rather than by waiting.
     """
     season = await load_season(season_id, db)
     require_admin(season, user)

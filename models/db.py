@@ -209,6 +209,11 @@ class SeasonPickWeek(Base):
     week: Mapped[int] = mapped_column(Integer)
     # False for a bye or any week the player or team did not have a game.
     played: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Whether the team had a game that week at all, which `played` cannot say on its own:
+    # a player who sat out injured and a player on a bye both record played=False, and
+    # only one of them used up a game. Null where it is not known — rows entered by hand,
+    # and anything written before the sync started asking for the schedule.
+    team_played: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
     # PLAYER_PROP: the stat recorded that week. TEAM_WINS: 1 win, 0 loss, 0.5 tie.
     value: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 

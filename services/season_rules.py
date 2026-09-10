@@ -44,12 +44,6 @@ SEASON_RULES: dict[int, SeasonRules] = {
 
 DEFAULT_RULES = SeasonRules(corrector=GamblerScoreCorrector2025)
 
-# ---------------------------------------------------------------------------
-# TEMPORARY: pins the season clock so the season-picks UI can be seen mid-season
-# before week one has actually opened. Set back to None before shipping.
-# ---------------------------------------------------------------------------
-WEEK_OVERRIDE: int | None = None
-
 
 def get_season_rules(season_year: int) -> SeasonRules:
     return SEASON_RULES.get(season_year, DEFAULT_RULES)
@@ -79,8 +73,6 @@ def week_opens_on(rules: SeasonRules, week: int) -> datetime.date | None:
 
 def latest_open_week(rules: SeasonRules, today: datetime.date | None = None) -> int:
     """The highest week whose results can be entered, or 0 before week one closes."""
-    if WEEK_OVERRIDE is not None:
-        return min(WEEK_OVERRIDE, rules.weeks)
     opening = week_one_opens(rules)
     if opening is None:
         return 0

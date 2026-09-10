@@ -70,16 +70,20 @@ async def athlete_id_for(target: PropBetTarget, db: AsyncSession) -> str | None:
 def upsert_week(
     pick: SeasonPick, week: int, played: bool, value: float | None,
     existing: dict[int, SeasonPickWeek], report: SyncReport, db: AsyncSession,
+    team_played: bool | None = None,
 ) -> None:
     row = existing.get(week)
     if row is None:
-        db.add(SeasonPickWeek(season_pick_id=pick.id, week=week, played=played, value=value))
+        db.add(SeasonPickWeek(
+            season_pick_id=pick.id, week=week, played=played,
+            value=value, team_played=team_played,
+        ))
         report.weeks_written += 1
         return
     # ESPN wins over whatever was there, including a manual entry — but only when it has
     # an answer at all. Callers never reach here with an unknown value.
-    if row.played != played or row.value != value:
-        row.played, row.value = played, value
+    if row.played != played or row.value != value or row.team_played != team_played:
+        row.played, row.value, row.team_played = played, value, team_played
         report.weeks_updated += 1
 
 
@@ -107,6 +111,11 @@ async def gather_espn_data(
             continue
         if pick.prop_type is None or not supported(pick.prop_type):
             continue
+        # Player props need the schedule too, to tell a week the player missed from one
+        # nobody played. Same set as the team picks, so a player on a team somebody has
+        # backed outright costs no extra call.
+        if pick.prop_bet_target.team_name:
+            team_abbrs.add(pick.prop_bet_target.team_name)
         # Sequential and before the parallel phase, because it writes: a target that has
         # to be resolved by name gets its id saved, and after the first sync there are
         # none of these left to do.
@@ -134,18 +143,29 @@ async def gather_espn_data(
 
 def apply_weeks(
     pick: SeasonPick, played: dict[int, float], existing: dict[int, SeasonPickWeek],
-    report: SyncReport, db: AsyncSession,
+    report: SyncReport, db: AsyncSession, team_weeks: set[int] | None = None,
 ) -> None:
-    """Write the weeks that happened, and mark the gaps below them as not played."""
+    """Write the weeks that happened, and mark the gaps below them as not played.
+
+    `team_weeks` is every week the team has actually completed a game in. With it, a week
+    the player is missing from is either a game they sat out or a bye, and the two are
+    recorded differently — which is the whole point, since only one of them spends a game.
+    Without it nothing is claimed either way and team_played stays null.
+    """
+    # A game the player recorded proves the team played it, schedule or no schedule.
     for week, value in played.items():
-        upsert_week(pick, week, True, value, existing, report, db)
-    if not played:
-        return
-    # Only up to the last week ESPN has, so a season in progress does not get a run of
-    # false byes for games that simply have not been played yet.
-    for week in range(1, max(played) + 1):
+        upsert_week(pick, week, True, value, existing, report, db, team_played=True)
+
+    # The schedule reaches further than the gamelog whenever the player missed the most
+    # recent games, so it sets how far to walk. Falling back to the gamelog's own last
+    # week keeps a season in progress from filling with byes for games not yet played.
+    last = max(played, default=0)
+    if team_weeks:
+        last = max(last, max(team_weeks))
+    for week in range(1, last + 1):
         if week not in played:
-            upsert_week(pick, week, False, None, existing, report, db)
+            upsert_week(pick, week, False, None, existing, report, db,
+                        team_played=None if team_weeks is None else week in team_weeks)
 
 
 async def sync_season_picks(season_id: int, db: AsyncSession) -> SyncReport:
@@ -178,7 +198,7 @@ async def sync_season_picks(season_id: int, db: AsyncSession) -> SyncReport:
             if results is None:
                 report.skip(pick, f"ESPN schedule unavailable for {target.team_name}")
                 continue
-            apply_weeks(pick, results, existing, report, db)
+            apply_weeks(pick, results, existing, report, db, set(results))
         else:
             if pick.prop_type is None or not supported(pick.prop_type):
                 report.skip(pick, f"prop type {pick.prop_type} has no ESPN equivalent")
@@ -190,7 +210,11 @@ async def sync_season_picks(season_id: int, db: AsyncSession) -> SyncReport:
             # A player who appeared but has no line for this stat — a receiver with no
             # rushing attempts — really did record zero, so that is not a gap.
             values = {g.week: (resolve(pick.prop_type, g) or 0.0) for g in log}
-            apply_weeks(pick, values, existing, report, db)
+            # None rather than an empty set when the schedule is missing: an empty set
+            # would assert the team has played nothing, which is a much stronger claim.
+            schedule = schedules.get(target.team_name or "")
+            team_weeks = set(schedule) if schedule is not None else None
+            apply_weeks(pick, values, existing, report, db, team_weeks)
 
         report.picks_synced += 1
 

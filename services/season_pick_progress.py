@@ -18,12 +18,19 @@ class SeasonPickWeekProgress(BaseModel):
     week: int
     played: bool
     value: float | None
+    # Null where the sync has not been able to say — see SeasonPickWeek.team_played.
+    team_played: bool | None
 
 
 class SeasonPickProgress(BaseModel):
     total: float
     weeks_recorded: int
     weeks_played: int
+    # How far into the team's 17 games the season is, which is what pace and the rate a
+    # pick still needs are measured against. Distinct from weeks_played, which counts the
+    # games the *player* appeared in: someone who missed three games is three games behind
+    # the season, not three games short of a shorter one.
+    games_elapsed: int
     missing_weeks: list[int]
     # Lowest week that is open for entry and has no row yet. Backfill comes first,
     # so a missed week keeps surfacing instead of being skipped for a newer one.
@@ -63,6 +70,16 @@ def _status(pick: SeasonPick, total: float, weeks_remaining: int) -> SeasonPickS
     return SeasonPickStatus.PENDING
 
 
+def team_played(week) -> bool:
+    """Whether the team had a game that week.
+
+    Falls back to the player's own appearance where the sync could not say — the reading
+    this had before team_played existed, and still the best available for a week entered
+    by hand.
+    """
+    return week.played if week.team_played is None else week.team_played
+
+
 def build_progress(
     pick: SeasonPick,
     rules: SeasonRules,
@@ -78,11 +95,17 @@ def build_progress(
         total=total,
         weeks_recorded=len(by_week),
         weeks_played=sum(1 for w in pick.weeks if w.played),
+        games_elapsed=sum(1 for w in pick.weeks if team_played(w)),
         missing_weeks=missing,
         next_week_to_enter=missing[0] if missing else None,
         status=_status(pick, total, rules.weeks - len(by_week)),
         weeks=sorted(
-            (SeasonPickWeekProgress(week=w.week, played=w.played, value=w.value) for w in pick.weeks),
+            (
+                SeasonPickWeekProgress(
+                    week=w.week, played=w.played, value=w.value, team_played=w.team_played,
+                )
+                for w in pick.weeks
+            ),
             key=lambda w: w.week,
         ),
     )
