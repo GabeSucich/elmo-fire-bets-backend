@@ -18,7 +18,7 @@ from models import (
     SeasonPickWeek,
     User,
 )
-from services.season_pick_progress import SeasonPickProgress, build_progress
+from services.season_pick_progress import SEASON_UNSUPPORTED_PROPS, SeasonPickProgress, build_progress
 from services.season_rules import SeasonRules, get_season_rules, latest_open_week
 
 from .auth import manager
@@ -174,6 +174,14 @@ def validate_pick_shape(body: SeasonPickRequestData) -> None:
             raise HTTPException(status_code=400, detail="Team win totals must target a team")
     elif body.prop_type is None:
         raise HTTPException(status_code=400, detail="Player props need a prop type")
+    elif body.prop_type in SEASON_UNSUPPORTED_PROPS:
+        # Refused rather than filtered client-side alone: a build already in testers'
+        # hands still offers these, and a pick created from one settles off a sum of
+        # weekly bests, which is not what the market means.
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body.prop_type} is a best-game market and cannot be a season-long pick",
+        )
 
 
 def validate_week(rules: SeasonRules, week: int, body: WeekProgressRequestData) -> None:

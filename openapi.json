@@ -1756,7 +1756,7 @@
           "SeasonPicks"
         ],
         "summary": "Sync Season Picks Endpoint",
-        "description": "Pull every season pick in this season up to date with ESPN.\n\nAdmin only: it rewrites results across everyone's picks at once, including weeks that\nwere entered by hand. Slow by nature \u2014 one ESPN call per distinct player or team \u2014 so\nit is a deliberate action rather than something a screen triggers on load.\n\nThe same work runs on a schedule; this is the way to force it early, or to recover\nafter ESPN was unreachable when the scheduled run went out.",
+        "description": "Pull every season pick in this season up to date with ESPN.\n\nAdmin only: it rewrites results across everyone's picks at once, including weeks that\nwere entered by hand. Slow by nature \u2014 one ESPN call per distinct player or team \u2014 so\nit is a deliberate action rather than something a screen triggers on load.\n\nThe only way the sweep runs: nothing else calls it. Weeks stay as they were until an\nadmin presses this, so a spell of ESPN being unreachable is recovered by pressing it\nagain rather than by waiting.",
         "operationId": "sync_season_picks",
         "security": [
           {

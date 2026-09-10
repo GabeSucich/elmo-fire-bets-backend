@@ -7,6 +7,9 @@ from .score_correctors.score_corrector_2026 import GamblerScoreCorrector2026
 
 # NFL regular season: 18 weeks, 17 games, one bye per team.
 REGULAR_SEASON_WEEKS = 18
+# Kept apart from the week count on purpose. Anything counting what a team can still do
+# has to count games: treating the bye as a winnable week hands every team a phantom win.
+REGULAR_SEASON_GAMES = 17
 
 # An NFL week runs Tuesday to Monday. A week opens for entry on the Tuesday it starts,
 # before its games are played — nothing is enterable yet, but the slot is there and the
@@ -27,6 +30,7 @@ class SeasonRules:
     season_long_picks: bool = False
     pick_count: int = 10
     weeks: int = REGULAR_SEASON_WEEKS
+    games: int = REGULAR_SEASON_GAMES
     week_one_kickoff: datetime.date | None = None
 
 

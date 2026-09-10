@@ -4,8 +4,21 @@ from typing import *
 
 from pydantic import BaseModel
 
-from models import SeasonPick, SeasonPickKind, PropBetDirection
+from models import SeasonPick, SeasonPickKind, PropBetDirection, PropBetType
 from .season_rules import SeasonRules, latest_open_week
+
+
+# Markets whose season figure is the best single game rather than the sum of every game.
+# build_progress adds the weeks up, which is right for a stat you accumulate and nonsense
+# for one you only set a new best in: fifteen weeks of a longest reception sum to 329 for
+# a player whose longest all year was 45, clearing a 55.5 line that was never beaten.
+# Kept here rather than in the router because the sum below is the reason for the rule.
+SEASON_UNSUPPORTED_PROPS: frozenset[PropBetType] = frozenset({
+    PropBetType.LONGEST_RUSH,
+    PropBetType.LONGEST_RECEPTION,
+    PropBetType.LONGEST_TD,
+    PropBetType.LONGEST_COMPLETION,
+})
 
 
 class SeasonPickStatus(StrEnum):
@@ -39,7 +52,9 @@ class SeasonPickProgress(BaseModel):
     weeks: list[SeasonPickWeekProgress]
 
 
-def _status(pick: SeasonPick, total: float, weeks_remaining: int) -> SeasonPickStatus:
+def _status(
+    pick: SeasonPick, total: float, weeks_remaining: int, games_remaining: int,
+) -> SeasonPickStatus:
     """Decided as soon as the outcome is certain, otherwise pending.
 
     An OVER is settled the moment the line is cleared and can never come back. An
@@ -60,8 +75,10 @@ def _status(pick: SeasonPick, total: float, weeks_remaining: int) -> SeasonPickS
         return SeasonPickStatus.HIT if hit else SeasonPickStatus.MISSED
 
     if pick.kind == SeasonPickKind.TEAM_WINS:
-        # Every remaining game is worth at most one win.
-        best_case = total + weeks_remaining
+        # Every remaining game is worth at most one win — games, not weeks. A team plays
+        # 17 of the 18, so counting weeks credits them with the bye and keeps a bet that
+        # is already decided sitting at pending until the bye has been played through.
+        best_case = total + games_remaining
         if pick.direction == PropBetDirection.OVER and best_case <= pick.line:
             return SeasonPickStatus.MISSED
         if pick.direction == PropBetDirection.UNDER and best_case < pick.line:
@@ -88,6 +105,7 @@ def build_progress(
     by_week = {w.week: w for w in pick.weeks}
     total = sum(w.value or 0 for w in pick.weeks if w.played)
 
+    games_elapsed = sum(1 for w in pick.weeks if team_played(w))
     open_through = latest_open_week(rules, today)
     missing = [wk for wk in range(1, open_through + 1) if wk not in by_week]
 
@@ -95,10 +113,16 @@ def build_progress(
         total=total,
         weeks_recorded=len(by_week),
         weeks_played=sum(1 for w in pick.weeks if w.played),
-        games_elapsed=sum(1 for w in pick.weeks if team_played(w)),
+        games_elapsed=games_elapsed,
         missing_weeks=missing,
         next_week_to_enter=missing[0] if missing else None,
-        status=_status(pick, total, rules.weeks - len(by_week)),
+        # Two different clocks, deliberately. The season is over when every week is in;
+        # what a team can still win depends on the games it has left, which is fewer.
+        status=_status(
+            pick, total,
+            weeks_remaining=rules.weeks - len(by_week),
+            games_remaining=rules.games - games_elapsed,
+        ),
         weeks=sorted(
             (
                 SeasonPickWeekProgress(
