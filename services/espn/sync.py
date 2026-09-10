@@ -23,7 +23,7 @@ from models import (
     SeasonPickKind,
     SeasonPickWeek,
 )
-from .client import fetch_gamelog, fetch_team_results, find_athlete_id
+from .client import fetch_athlete_team, fetch_gamelog, fetch_team_results, find_athlete_id
 from .stats import resolve, supported
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,8 @@ class SyncReport:
     weeks_written: int = 0
     weeks_updated: int = 0
     skipped: list[str] = field(default_factory=list)
+    # Targets whose team ESPN disagreed with, and which were rewritten to match.
+    team_changes: list[str] = field(default_factory=list)
 
     def skip(self, pick: SeasonPick, why: str) -> None:
         self.skipped.append(f"pick {pick.id}: {why}")
@@ -92,6 +94,37 @@ def upsert_week(
 FETCH_CONCURRENCY = 6
 
 
+async def refresh_target_teams(
+    player_targets: dict[str, PropBetTarget], bounded, report: SyncReport, db: AsyncSession,
+) -> None:
+    """Bring every player target's team into line with ESPN.
+
+    PropBetTarget is shared with parlay picks, so this rewrites how an old pick is
+    labelled as well: a bet placed on a player at their previous club will start showing
+    the club they are at now. That is a deliberate trade — a season pick settled against
+    the wrong team's schedule is wrong every week, where a historical label being current
+    rather than contemporaneous is only untidy.
+
+    A lookup that fails leaves the stored team alone. Clearing it would lose the schedule
+    entirely, which is worse than a stale one.
+    """
+    if not player_targets:
+        return
+
+    found = await asyncio.gather(
+        *[bounded(fetch_athlete_team, athlete_id) for athlete_id in player_targets]
+    )
+
+    for athlete_id, team in found:
+        target = player_targets[athlete_id]
+        if team and team != target.team_name:
+            report.team_changes.append(f"{target.player_name}: {target.team_name} -> {team}")
+            target.team_name = team
+
+    if report.team_changes:
+        await db.commit()
+
+
 async def gather_espn_data(
     picks: list[SeasonPick], season_year: int, report: SyncReport, db: AsyncSession,
 ) -> tuple[dict[str, object], dict[str, dict[int, float]]]:
@@ -103,6 +136,8 @@ async def gather_espn_data(
     """
     athlete_ids: set[str] = set()
     team_abbrs: set[str] = set()
+    # Keyed by athlete id so the team refresh below can find its way back to the row.
+    player_targets: dict[str, PropBetTarget] = {}
 
     for pick in picks:
         if pick.kind is SeasonPickKind.TEAM_WINS:
@@ -111,29 +146,32 @@ async def gather_espn_data(
             continue
         if pick.prop_type is None or not supported(pick.prop_type):
             continue
-        # Player props need the schedule too, to tell a week the player missed from one
-        # nobody played. Same set as the team picks, so a player on a team somebody has
-        # backed outright costs no extra call.
-        if pick.prop_bet_target.team_name:
-            team_abbrs.add(pick.prop_bet_target.team_name)
         # Sequential and before the parallel phase, because it writes: a target that has
         # to be resolved by name gets its id saved, and after the first sync there are
         # none of these left to do.
         athlete_id = await athlete_id_for(pick.prop_bet_target, db)
         if athlete_id:
             athlete_ids.add(athlete_id)
+            player_targets[athlete_id] = pick.prop_bet_target
 
     semaphore = asyncio.Semaphore(FETCH_CONCURRENCY)
 
-    async def bounded(fn, key):
+    async def bounded(fn, key, *args):
         async with semaphore:
             # requests is blocking, so each call gets a thread; the semaphore is what keeps
             # that from becoming a thread per target.
-            return key, await asyncio.to_thread(fn, key, season_year)
+            return key, await asyncio.to_thread(fn, key, *args)
+
+    # Before anything else, because which schedules to fetch depends on the answer. A
+    # target keeps whatever team it was created with — nothing else in the app ever writes
+    # that field — so one reused from a previous season names last season's team, and the
+    # schedule fetched for it belongs to a team the player has left.
+    await refresh_target_teams(player_targets, bounded, report, db)
+    team_abbrs.update(t.team_name for t in player_targets.values() if t.team_name)
 
     results = await asyncio.gather(
-        *[bounded(fetch_gamelog, a) for a in athlete_ids],
-        *[bounded(fetch_team_results, t) for t in team_abbrs],
+        *[bounded(fetch_gamelog, a, season_year) for a in athlete_ids],
+        *[bounded(fetch_team_results, t, season_year) for t in team_abbrs],
     )
 
     logs = {k: v for k, v in results if k in athlete_ids}
@@ -220,8 +258,11 @@ async def sync_season_picks(season_id: int, db: AsyncSession) -> SyncReport:
 
     await db.commit()
     logger.info(
-        "season %s sync: %d/%d picks, %d weeks written, %d updated, %d skipped",
+        "season %s sync: %d/%d picks, %d weeks written, %d updated, %d skipped, %d moved",
         season_id, report.picks_synced, report.picks_seen,
         report.weeks_written, report.weeks_updated, len(report.skipped),
+        len(report.team_changes),
     )
+    for change in report.team_changes:
+        logger.info("season %s sync: target team corrected — %s", season_id, change)
     return report

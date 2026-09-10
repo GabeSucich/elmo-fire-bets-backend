@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 GAMELOG_URL = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{athlete_id}/gamelog"
 SCHEDULE_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{team}/schedule"
 SEARCH_URL = "https://site.web.api.espn.com/apis/common/v3/search"
+ATHLETE_URL = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{athlete_id}"
 
 TIMEOUT_SECONDS = 20
 # Deliberately no User-Agent override. site.api.espn.com answers 403 to a browser-looking
@@ -60,6 +61,28 @@ def find_athlete_id(name: str) -> str | None:
         return str(items[0]["id"]) if items else None
     except Exception:
         logger.exception("athlete search failed for %r", name)
+        return None
+
+
+def fetch_athlete_team(athlete_id: str) -> str | None:
+    """The team an athlete plays for right now.
+
+    Deliberately its own call rather than something read off the gamelog. A gamelog says
+    which teams an athlete has played games for, which is no help for the case that needs
+    answering — a player who has changed teams and not yet played, whose gamelog comes
+    back empty. This endpoint answers for them too.
+
+    None on any failure, which callers must treat as "unchanged" rather than "no team":
+    overwriting a good abbreviation with nothing would take the schedule lookup with it.
+    """
+    try:
+        response = requests.get(ATHLETE_URL.format(athlete_id=athlete_id), timeout=TIMEOUT_SECONDS)
+        response.raise_for_status()
+        payload = response.json()
+        athlete = payload.get("athlete") or payload
+        return ((athlete.get("team") or {}).get("abbreviation")) or None
+    except Exception:
+        logger.exception("athlete team lookup failed for %s", athlete_id)
         return None
 
 
