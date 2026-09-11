@@ -3666,12 +3666,22 @@
             },
             "type": "object",
             "title": "Loss Ledger"
+          },
+          "season_net_pp": {
+            "type": "number",
+            "title": "Season Net Pp"
+          },
+          "wins_missing_payout": {
+            "type": "integer",
+            "title": "Wins Missing Payout"
           }
         },
         "type": "object",
         "required": [
           "performances",
-          "loss_ledger"
+          "loss_ledger",
+          "season_net_pp",
+          "wins_missing_payout"
         ],
         "title": "GetSeasonGamblerPerformancesResponseData"
       },

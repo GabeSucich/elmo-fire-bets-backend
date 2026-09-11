@@ -23,6 +23,7 @@ from .auth import manager
 from .common import GamblerResponseData, ParlayResponseData, add_selects_to_parlay_query
 
 from services.loss_ledger import loss_ledger
+from services.season_money import season_money
 from services.season_performance_calculator import SeasonPerformanceCalculator, GamblerPerformance
 from services.season_rules import get_season_score_corrector_class
 from services.performance_time_series import TimeSeriesCalculator, TimeSeriesDatum
@@ -156,6 +157,13 @@ class GetSeasonGamblerPerformancesResponseData(BaseModel):
     # What each gambler's bozos have cost, keyed by gambler id. Absent from the map rather
     # than zero where somebody has never bozoed, so the badge can be left off entirely.
     loss_ledger: dict[int, float]
+    # The season's running total, per person, across every closed lay. Computed here rather
+    # than in the client because the closed list is paged, and summing a page would quietly
+    # report a fraction of the season as though it were the whole thing.
+    season_net_pp: float
+    # Wins with no payout recorded. The total above leaves them out, so it is a floor
+    # rather than a figure while this is above zero.
+    wins_missing_payout: int
 
 
 @router.get("/{season_id}/gambler_performances", operation_id="get_season_gambler_performances", response_model=GetSeasonGamblerPerformancesResponseData)
@@ -179,12 +187,15 @@ async def get_season_gambler_performances(
 
     gambler_ids = [g.id for g in gambling_season.gamblers]
 
+    money = season_money(list(parlays))
     calculators = GamblerMetricsCalculator.calculator_dict_from_parlays(gambler_ids, list(parlays))
     score_corrector_class = get_season_score_corrector_class(gambling_season.year)
     season_calculator = SeasonPerformanceCalculator(calculators, score_corrector_class)
     return GetSeasonGamblerPerformancesResponseData(
         performances=season_calculator.performances,
         loss_ledger=loss_ledger(list(parlays)),
+        season_net_pp=money.net_pp,
+        wins_missing_payout=money.wins_missing_payout,
     )
 
 class GetSeasonTimeSeriesResponseData(BaseModel):
