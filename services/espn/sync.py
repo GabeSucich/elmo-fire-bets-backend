@@ -94,29 +94,45 @@ def upsert_week(
 FETCH_CONCURRENCY = 6
 
 
-async def refresh_target_teams(
-    player_targets: dict[str, PropBetTarget], bounded, report: SyncReport, db: AsyncSession,
-) -> None:
+async def refresh_target_teams(report: SyncReport, db: AsyncSession) -> None:
     """Bring every player target's team into line with ESPN.
 
-    PropBetTarget is shared with parlay picks, so this rewrites how an old pick is
-    labelled as well: a bet placed on a player at their previous club will start showing
-    the club they are at now. That is a deliberate trade — a season pick settled against
-    the wrong team's schedule is wrong every week, where a historical label being current
-    rather than contemporaneous is only untidy.
+    Every target, not only the ones a season pick points at. The overwhelming majority
+    exist solely on parlay picks, which read their logo from this same column — so
+    scoping this to season picks left a player's old badge on every parlay he appears in
+    and no route to ever correct it.
+
+    PropBetTarget is shared across seasons, so this rewrites how an old pick is labelled
+    too: a bet placed on a player at his previous club will start showing the club he is
+    at now. That is the deliberate trade — a season pick settled against the wrong team's
+    schedule is wrong every week, and a logo that is simply wrong is worse than one that
+    is merely no longer contemporaneous.
 
     A lookup that fails leaves the stored team alone. Clearing it would lose the schedule
-    entirely, which is worse than a stale one.
+    entirely, which is worse than a stale abbreviation.
     """
-    if not player_targets:
+    targets = list((await db.execute(
+        select(PropBetTarget)
+        .where(PropBetTarget.player_name.is_not(None))
+        .where(PropBetTarget.espn_athlete_id.is_not(None))
+    )).scalars())
+    if not targets:
         return
 
-    found = await asyncio.gather(
-        *[bounded(fetch_athlete_team, athlete_id) for athlete_id in player_targets]
-    )
+    by_athlete = {t.espn_athlete_id: t for t in targets}
+
+    # requests is blocking, so each call gets a thread; the semaphore is what keeps that
+    # from becoming a thread per target across a few hundred of them.
+    semaphore = asyncio.Semaphore(FETCH_CONCURRENCY)
+
+    async def team_for(athlete_id: str):
+        async with semaphore:
+            return athlete_id, await asyncio.to_thread(fetch_athlete_team, athlete_id)
+
+    found = await asyncio.gather(*[team_for(a) for a in by_athlete])
 
     for athlete_id, team in found:
-        target = player_targets[athlete_id]
+        target = by_athlete[athlete_id]
         if team and team != target.team_name:
             report.team_changes.append(f"{target.player_name}: {target.team_name} -> {team}")
             target.team_name = team
@@ -136,7 +152,7 @@ async def gather_espn_data(
     """
     athlete_ids: set[str] = set()
     team_abbrs: set[str] = set()
-    # Keyed by athlete id so the team refresh below can find its way back to the row.
+    # Held so the schedules fetched below follow the team each target now names.
     player_targets: dict[str, PropBetTarget] = {}
 
     for pick in picks:
@@ -162,11 +178,7 @@ async def gather_espn_data(
             # that from becoming a thread per target.
             return key, await asyncio.to_thread(fn, key, *args)
 
-    # Before anything else, because which schedules to fetch depends on the answer. A
-    # target keeps whatever team it was created with — nothing else in the app ever writes
-    # that field — so one reused from a previous season names last season's team, and the
-    # schedule fetched for it belongs to a team the player has left.
-    await refresh_target_teams(player_targets, bounded, report, db)
+    # Already refreshed by refresh_target_teams, which runs before this.
     team_abbrs.update(t.team_name for t in player_targets.values() if t.team_name)
 
     results = await asyncio.gather(
@@ -223,6 +235,11 @@ async def sync_season_picks(season_id: int, db: AsyncSession) -> SyncReport:
         .options(selectinload(SeasonPick.prop_bet_target))
         .options(selectinload(SeasonPick.weeks))
     )).scalars())
+
+    # Before the picks are read, because which schedule each one needs depends on the
+    # answer: a target keeps whatever team it was created with until this corrects it,
+    # and a schedule fetched for a team the player has left invents results all season.
+    await refresh_target_teams(report, db)
 
     logs, schedules = await gather_espn_data(picks, season.year, report, db)
 
