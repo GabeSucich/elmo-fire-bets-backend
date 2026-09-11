@@ -48,6 +48,8 @@ class ExtractCorrectionLegsRequestData(BaseModel):
 class ExtractCorrectionLegsResponseData(BaseModel):
     legs: list[ExtractedLeg]
     stated_leg_count: int | None
+    # As printed on the slip: whole lay, stake included. The client divides it.
+    total_payout: float | None
 
 
 @router.post(
@@ -76,7 +78,8 @@ async def extract_correction_legs(
 
     return ExtractCorrectionLegsResponseData(
         legs=result.legs,
-        stated_leg_count=result.stated_leg_count
+        stated_leg_count=result.stated_leg_count,
+        total_payout=result.total_payout
     )
 
 

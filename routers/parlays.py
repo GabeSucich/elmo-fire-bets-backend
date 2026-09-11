@@ -88,14 +88,30 @@ class UpdateParlayRequestData(BaseModel):
     slate_type: SlateType | None
     owner_id: int | None
     wager_pp: float | None
+    # Per person and stake-inclusive, as stored. The client does the dividing, because it
+    # is the thing that knows whether a total or a per-person figure was typed.
+    payout_pp: float | None = None
+    # Distinguishes "leave it alone" from "clear it", which a nullable field cannot do on
+    # its own: every other field here treats null as absent.
+    clear_payout: bool = False
 
 class UpdateParlayResponseData(BaseModel):
     parlay: ParlayResponseData
 
 @router.patch("/", operation_id="update_parlay", response_model=UpdateParlayResponseData)
-async def update_parlay(body: UpdateParlayRequestData, db: AsyncSession = Depends(get_db)) -> UpdateParlayResponseData:
+async def update_parlay(
+    body: UpdateParlayRequestData,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(manager),
+) -> UpdateParlayResponseData:
     parlay = (await query_parlay_with_selects(body.parlay_id, db)).scalar_one()
     await check_season_in_progress(parlay.gambling_season_id, db)
+
+    # Deliberately open to anyone in the season, like the rest of this endpoint. Everybody
+    # on a lay has the same money riding on it, so whoever has the slip in front of them
+    # should be able to record what it paid — waiting on the owner would mean a lay sitting
+    # there saying "Missing $ info" because one person has not got round to it.
+
     updated = False
     if body.competition_date:
         parlay.competition_date = body.competition_date
@@ -106,8 +122,16 @@ async def update_parlay(body: UpdateParlayRequestData, db: AsyncSession = Depend
     if body.owner_id is not None:
         parlay.owner_id = body.owner_id
         updated = True
+    # Both of these used to change the row and then leave `updated` false, so the commit
+    # below never ran and the write was silently dropped.
     if body.wager_pp is not None:
         parlay.wager_pp = body.wager_pp
+        updated = True
+    if body.clear_payout:
+        parlay.payout_pp = None
+        updated = True
+    elif body.payout_pp is not None:
+        parlay.payout_pp = body.payout_pp
         updated = True
     
     if updated:

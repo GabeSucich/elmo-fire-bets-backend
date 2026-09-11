@@ -47,7 +47,7 @@ WHAT TO IGNORE
 - Some slips repeat a compact summary of every leg near the top or in a header, for example a \
 single line reading "Over 0.5, 2+, Over 11.5, 42+, Over 216.5". That is a summary of legs \
 listed in full elsewhere, not a set of additional legs. Ignore it.
-- Ignore odds, payouts, wager amounts, boosts, and promotional text.
+- Ignore odds, wager amounts, boosts, and promotional text.
 
 MULTIPLE IMAGES
 - The images may be overlapping scrolls of the same slip. If the same leg appears in more than \
@@ -57,6 +57,20 @@ one image, return it only once.
 LEG COUNT
 - If the slip states how many legs it contains (for example "5 Leg Parlay"), set \
 stated_leg_count to that number. Otherwise set it to null.
+
+PAYOUT
+- Slips print what the bet returns if it wins, labelled "To Pay", "To Win", "Total Payout", \
+"Potential Payout", "Est. Payout" or similar. Set total_payout to that number, without its \
+currency symbol or commas.
+- It sits beside the wager, often on the same line: "Wager: $20.00 | To Pay: $470.00" has a \
+total_payout of 470.
+- Take the figure for the whole bet as printed. Do not divide it, and do not subtract the \
+wager from it even where the slip shows both — a slip reading "Wager $25.00" and \
+"To Win $925.00" has a total_payout of 925.
+- Where the slip shows both a pre-boost and a boosted payout, take the boosted one: it is \
+what would actually be collected.
+- Set it to null if no payout is printed. A cropped screenshot showing only the legs is \
+the normal case for that, and a guess is worse than nothing here.
 """
 
 

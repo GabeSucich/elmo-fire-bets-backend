@@ -45,6 +45,7 @@ async def extract_legs_from_images(images: list[str]) -> ExtractionResult:
     return ExtractionResult(
         legs=_dedupe_legs(result.legs),
         stated_leg_count=result.stated_leg_count,
+        total_payout=result.total_payout,
     )
 
 

@@ -29,6 +29,10 @@ class ExtractedLeg(BaseModel):
 class ExtractionResult(BaseModel):
     legs: list[ExtractedLeg]
     stated_leg_count: int | None
+    # What the slip says the bet returns if it lands, as printed — the whole return with
+    # the stake inside it, and for the whole lay rather than per person. Null when the
+    # slip does not show one, which is common on a screenshot cropped to the legs.
+    total_payout: float | None
 
 
 class PickForMatching(BaseModel):

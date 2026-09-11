@@ -183,6 +183,9 @@ class ParlayResponseData(BaseModel):
     owner_id: int
     slate_type: SlateType
     wager_pp: float
+    # What the lay returns per person if it lands, stake included — the figure a slip
+    # prints, divided by the legs on it. Null until somebody enters or extracts one.
+    payout_pp: float | None
     competition_date: date
     picks: list[PickResponseData]
     state: ParlayState
@@ -197,6 +200,7 @@ class ParlayResponseData(BaseModel):
             owner_id=model.owner_id,
             slate_type=model.slate_type,
             wager_pp=model.wager_pp,
+            payout_pp=model.payout_pp,
             competition_date=model.competition_date,
             picks=picks,
             state=model.state,

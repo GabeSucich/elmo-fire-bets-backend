@@ -22,6 +22,7 @@ from database import get_db
 from .auth import manager
 from .common import GamblerResponseData, ParlayResponseData, add_selects_to_parlay_query
 
+from services.loss_ledger import loss_ledger
 from services.season_performance_calculator import SeasonPerformanceCalculator, GamblerPerformance
 from services.season_rules import get_season_score_corrector_class
 from services.performance_time_series import TimeSeriesCalculator, TimeSeriesDatum
@@ -152,6 +153,9 @@ async def get_season_parlays(
 
 class GetSeasonGamblerPerformancesResponseData(BaseModel):
     performances: dict[int, GamblerPerformance]
+    # What each gambler's bozos have cost, keyed by gambler id. Absent from the map rather
+    # than zero where somebody has never bozoed, so the badge can be left off entirely.
+    loss_ledger: dict[int, float]
 
 
 @router.get("/{season_id}/gambler_performances", operation_id="get_season_gambler_performances", response_model=GetSeasonGamblerPerformancesResponseData)
@@ -179,7 +183,8 @@ async def get_season_gambler_performances(
     score_corrector_class = get_season_score_corrector_class(gambling_season.year)
     season_calculator = SeasonPerformanceCalculator(calculators, score_corrector_class)
     return GetSeasonGamblerPerformancesResponseData(
-        performances=season_calculator.performances
+        performances=season_calculator.performances,
+        loss_ledger=loss_ledger(list(parlays)),
     )
 
 class GetSeasonTimeSeriesResponseData(BaseModel):

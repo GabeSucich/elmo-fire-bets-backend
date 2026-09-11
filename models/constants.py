@@ -109,6 +109,10 @@ PICK_REACTION_EMOJI = (
     "\U0001F4A9",  # pile of poo
     "\U0001F92E",  # vomiting
     "\U0001F480",  # skull
+    "\U0001F410",  # goat
+    "\U0001F4B0",  # money bag
+    "\U0001F62C",  # grimacing
+    "\U0001F3A3",  # fishing pole
     # Last, deliberately: a verdict rather than a reaction, and the two people reach for
     # without thinking. Kept off the front so they do not crowd out everything else.
     "\U0001F44D",  # thumbs up

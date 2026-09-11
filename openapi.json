@@ -3181,12 +3181,24 @@
               }
             ],
             "title": "Stated Leg Count"
+          },
+          "total_payout": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Payout"
           }
         },
         "type": "object",
         "required": [
           "legs",
-          "stated_leg_count"
+          "stated_leg_count",
+          "total_payout"
         ],
         "title": "ExtractCorrectionLegsResponseData"
       },
@@ -3647,11 +3659,19 @@
             },
             "type": "object",
             "title": "Performances"
+          },
+          "loss_ledger": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Loss Ledger"
           }
         },
         "type": "object",
         "required": [
-          "performances"
+          "performances",
+          "loss_ledger"
         ],
         "title": "GetSeasonGamblerPerformancesResponseData"
       },
@@ -4114,6 +4134,17 @@
             "type": "number",
             "title": "Wager Pp"
           },
+          "payout_pp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payout Pp"
+          },
           "competition_date": {
             "type": "string",
             "format": "date",
@@ -4150,6 +4181,7 @@
           "owner_id",
           "slate_type",
           "wager_pp",
+          "payout_pp",
           "competition_date",
           "picks",
           "state",
@@ -5657,6 +5689,22 @@
               }
             ],
             "title": "Wager Pp"
+          },
+          "payout_pp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payout Pp"
+          },
+          "clear_payout": {
+            "type": "boolean",
+            "title": "Clear Payout",
+            "default": false
           }
         },
         "type": "object",
