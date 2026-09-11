@@ -60,6 +60,41 @@ MADE_ATTEMPTS: dict[PropBetType, str] = {
     PropBetType.FGS: "fieldGoalsMade-fieldGoalAttempts",
 }
 
+# Stats the live boxscore names differently from the gamelog. Checked key by key against a
+# real summary response rather than assumed: of the twenty markets this league bets, only
+# these three disagree, and one more has no boxscore equivalent at all.
+#
+#   completions/passingAttempts   one field where the gamelog keeps two
+#   fieldGoalsMade/…              the same pair the gamelog joins with a hyphen
+#   longPassing                   absent from the boxscore entirely, so LONGEST_COMPLETION
+#                                 cannot be read live at all — one pick in league history
+# Markets the live boxscore cannot express at all, however much of the game has been
+# played. Kept apart from "the player recorded none of it", because the two look identical
+# in the data and mean opposite things: one is a zero, the other is no answer.
+NOT_IN_BOXSCORE: frozenset[PropBetType] = frozenset({PropBetType.LONGEST_COMPLETION})
+
+
+def normalize_boxscore(values: dict[str, str]) -> dict[str, str]:
+    """A boxscore stat line, renamed to the vocabulary `resolve` already speaks.
+
+    Done here rather than in the fetcher so that every assumption about ESPN's naming
+    lives in one file, which is what this module is for.
+    """
+    out = dict(values)
+
+    pair = values.get("completions/passingAttempts")
+    if pair and "/" in pair:
+        made, _, attempts = pair.partition("/")
+        out.setdefault("completions", made)
+        out.setdefault("passingAttempts", attempts)
+
+    kicking = values.get("fieldGoalsMade/fieldGoalAttempts")
+    if kicking:
+        # made_of splits on either separator, so the value carries across unchanged.
+        out.setdefault("fieldGoalsMade-fieldGoalAttempts", kicking)
+
+    return out
+
 # ESPN publishes longest rush, longest reception and longest pass, but nothing for the
 # longest play that was a touchdown. There is no key to map this to at any position, so it
 # stays a manual entry rather than being approximated from something adjacent.

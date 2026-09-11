@@ -94,32 +94,25 @@ def upsert_week(
 FETCH_CONCURRENCY = 6
 
 
-async def refresh_target_teams(report: SyncReport, db: AsyncSession) -> None:
-    """Bring every player target's team into line with ESPN.
+async def refresh_teams(targets: list[PropBetTarget], changes: list[str], db: AsyncSession) -> None:
+    """Bring a set of player targets' teams into line with ESPN.
 
-    Every target, not only the ones a season pick points at. The overwhelming majority
-    exist solely on parlay picks, which read their logo from this same column — so
-    scoping this to season picks left a player's old badge on every parlay he appears in
-    and no route to ever correct it.
+    A target keeps whatever team it was created with — nothing else in the app writes that
+    field — so one reused from a previous season names last season's team. For a season
+    pick that is not cosmetic: the schedule fetched for it belongs to a club the player
+    has left, and every week gets attributed against the wrong fixtures.
 
-    PropBetTarget is shared across seasons, so this rewrites how an old pick is labelled
-    too: a bet placed on a player at his previous club will start showing the club he is
-    at now. That is the deliberate trade — a season pick settled against the wrong team's
-    schedule is wrong every week, and a logo that is simply wrong is worse than one that
+    PropBetTarget is shared across seasons and with parlay picks, so this also rewrites how
+    an old pick is labelled: a bet placed on a player at his previous club starts showing
+    the club he is at now. Deliberate — a logo that is simply wrong is worse than one that
     is merely no longer contemporaneous.
 
     A lookup that fails leaves the stored team alone. Clearing it would lose the schedule
     entirely, which is worse than a stale abbreviation.
     """
-    targets = list((await db.execute(
-        select(PropBetTarget)
-        .where(PropBetTarget.player_name.is_not(None))
-        .where(PropBetTarget.espn_athlete_id.is_not(None))
-    )).scalars())
-    if not targets:
+    by_athlete = {t.espn_athlete_id: t for t in targets if t.espn_athlete_id}
+    if not by_athlete:
         return
-
-    by_athlete = {t.espn_athlete_id: t for t in targets}
 
     # requests is blocking, so each call gets a thread; the semaphore is what keeps that
     # from becoming a thread per target across a few hundred of them.
@@ -131,13 +124,15 @@ async def refresh_target_teams(report: SyncReport, db: AsyncSession) -> None:
 
     found = await asyncio.gather(*[team_for(a) for a in by_athlete])
 
+    changed = False
     for athlete_id, team in found:
         target = by_athlete[athlete_id]
         if team and team != target.team_name:
-            report.team_changes.append(f"{target.player_name}: {target.team_name} -> {team}")
+            changes.append(f"{target.player_name}: {target.team_name} -> {team}")
             target.team_name = team
+            changed = True
 
-    if report.team_changes:
+    if changed:
         await db.commit()
 
 
@@ -178,7 +173,7 @@ async def gather_espn_data(
             # that from becoming a thread per target.
             return key, await asyncio.to_thread(fn, key, *args)
 
-    # Already refreshed by refresh_target_teams, which runs before this.
+    # Already refreshed by refresh_teams, which runs before this.
     team_abbrs.update(t.team_name for t in player_targets.values() if t.team_name)
 
     results = await asyncio.gather(
@@ -236,10 +231,13 @@ async def sync_season_picks(season_id: int, db: AsyncSession) -> SyncReport:
         .options(selectinload(SeasonPick.weeks))
     )).scalars())
 
-    # Before the picks are read, because which schedule each one needs depends on the
-    # answer: a target keeps whatever team it was created with until this corrects it,
-    # and a schedule fetched for a team the player has left invents results all season.
-    await refresh_target_teams(report, db)
+    # Only the targets these picks use. The wider sweep across every target in the app is
+    # its own admin action: most targets belong to parlay picks alone, and refreshing a few
+    # hundred of them has nothing to do with bringing this season's progress up to date.
+    await refresh_teams(
+        [p.prop_bet_target for p in picks if p.prop_bet_target.player_name],
+        report.team_changes, db,
+    )
 
     logs, schedules = await gather_espn_data(picks, season.year, report, db)
 
@@ -282,4 +280,58 @@ async def sync_season_picks(season_id: int, db: AsyncSession) -> SyncReport:
     )
     for change in report.team_changes:
         logger.info("season %s sync: target team corrected — %s", season_id, change)
+    return report
+
+
+@dataclass
+class PlayerSyncReport:
+    """What the sweep across every player target did."""
+    targets_seen: int = 0
+    ids_resolved: int = 0
+    ids_failed: list[str] = field(default_factory=list)
+    team_changes: list[str] = field(default_factory=list)
+
+
+async def sync_all_players(db: AsyncSession) -> PlayerSyncReport:
+    """Bring every player target in the app up to date with ESPN.
+
+    Two jobs that have to happen in this order. A target with no numeric athlete id cannot
+    be asked anything — the uuid the app stores is opaque to every stats endpoint — so the
+    id is resolved by name first, and only then is the team read off it. Doing the sweep in
+    one pass means a target created before the id column existed stops being permanently
+    invisible to the refresh.
+
+    Deliberately not part of the season pick sync. Most targets belong to parlay picks
+    alone, so a few hundred lookups on behalf of a different feature have no business
+    inside an action about this season's progress.
+    """
+    report = PlayerSyncReport()
+
+    targets = list((await db.execute(
+        select(PropBetTarget).where(PropBetTarget.player_name.is_not(None))
+    )).scalars())
+    report.targets_seen = len(targets)
+
+    # Sequential because it writes, and because after the first run there is almost never
+    # anything left to do: a name search is paid at most once per target, ever.
+    for target in targets:
+        if target.espn_athlete_id:
+            continue
+        found = await asyncio.to_thread(find_athlete_id, target.player_name)
+        if found:
+            target.espn_athlete_id = found
+            report.ids_resolved += 1
+        else:
+            report.ids_failed.append(target.player_name)
+    if report.ids_resolved:
+        await db.commit()
+
+    await refresh_teams(targets, report.team_changes, db)
+
+    logger.info(
+        "player sync: %d targets, %d ids resolved, %d unresolved, %d teams corrected",
+        report.targets_seen, report.ids_resolved, len(report.ids_failed), len(report.team_changes),
+    )
+    for change in report.team_changes:
+        logger.info("player sync: team corrected — %s", change)
     return report

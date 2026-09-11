@@ -39,6 +39,9 @@ class ListGamblingSeasonEl(BaseModel):
     name: str
     year: int
     state: GamblingSeasonState
+    # Whether this user runs this season. Rides on the list the app already fetches on
+    # entry, so the header menu can decide about admin-only items without a second call.
+    is_admin: bool
 
 
 class GetUserGamblingSeasonsResponseData(BaseModel):
@@ -55,7 +58,8 @@ async def get_user_gambling_seasions(user: UserModel=Depends(manager)):
                 id=g.gambling_season.id,
                 name=g.gambling_season.name,
                 year=g.gambling_season.year,
-                state=g.gambling_season.state
+                state=g.gambling_season.state,
+                is_admin=g.is_admin,
             ) for g in user_gamblers
         ]
     )
@@ -118,7 +122,11 @@ async def get_season_parlays(
     limit: int = Query(20, description="The number of results to return"),
     offset: int = Query(0, description="Offset to start descending query"),
     state: ParlayState | None = Query(None, description="State of parlays to retrieve"),
-    sort: GetSeasonParlaysSortParam = Query(GetSeasonParlaysSortParam.ASC, description="How to sort parlays in query")
+    # Nullable rather than defaulted, so the schema carries no default for this one. The
+    # TypeScript generator writes a schema default as a bare string literal, which does not
+    # satisfy the enum it also generates — the client then fails to compile on its own
+    # output. Ascending is still what an absent sort means; it is decided below instead.
+    sort: GetSeasonParlaysSortParam | None = Query(None, description="How to sort parlays in query")
 ):
     query = select(Parlay).where(Parlay.gambling_season_id==season_id)
     if state is not None:

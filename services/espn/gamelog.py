@@ -13,6 +13,7 @@ The response is three loosely-joined pieces:
 `stats` lines up with `names` by index, and the week is only reachable by looking the
 eventId back up in `events`. So reading one week is a two-step join, not a field access.
 """
+import re
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -53,13 +54,14 @@ class GameStats:
         """The left half of a made-attempts pair.
 
         Kicking stats arrive as one string — fieldGoalsMade-fieldGoalAttempts is "1-2" —
-        so they cannot be read as a number without splitting first.
+        so they cannot be read as a number without splitting first. The live boxscore
+        writes the same pair with a slash instead of a hyphen, so both are accepted.
         """
         value = self.raw(key)
         if value is None:
             return None
         try:
-            return float(value.split("-")[0])
+            return float(re.split(r"[-/]", value)[0])
         except (ValueError, IndexError):
             return None
 

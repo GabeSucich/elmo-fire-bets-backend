@@ -74,6 +74,17 @@ class Pick(Base):
     direction: Mapped[PropBetDirection] = mapped_column(SQLEnum(PropBetDirection))
     sauce_factor: Mapped[SauceFactor | None] = mapped_column(SQLEnum(SauceFactor), nullable=True, default=None)
     result: Mapped[PickResult | None] = mapped_column(SQLEnum(PickResult), nullable=True, default=None)
+    # What the stat actually is, pulled from the live boxscore by an explicit sync. Never
+    # written by anything that settles a bet: `result` stays hand-entered, because a void,
+    # a push and a bozo are all judgements no feed can make.
+    live_value: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    # ESPN's own reading of the game: "pre", "in" or "post". Distinct from having no
+    # value — a game that has not kicked off and a player who recorded nothing look the
+    # same in the numbers and should not look the same on the card.
+    live_state: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    # The human half of the same thing: "Final", "Q3 4:12", "9/13 - 1:00 PM EDT".
+    live_detail: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    live_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     gambler: Mapped["Gambler"] = relationship(back_populates="picks")
     vetoes: Mapped[list["PickVeto"]] = relationship(back_populates="pick", cascade="all, delete-orphan")

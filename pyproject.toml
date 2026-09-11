@@ -26,3 +26,16 @@ dependencies = [
     "tzdata>=2025.2",
     "uvicorn>=0.39.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+]
+
+[tool.pytest.ini_options]
+# The app is imported as top-level packages (services, models, routers), so the repo root
+# has to be on the path for a test to import the thing it is testing.
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"

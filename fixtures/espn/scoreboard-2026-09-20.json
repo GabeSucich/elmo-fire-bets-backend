@@ -1,0 +1,35 @@
+{
+  "events": [
+    {
+      "id": "9000001",
+      "shortName": "NE @ SEA (synthetic, in progress)",
+      "date": "2026-09-21T00:20:00.000+00:00",
+      "competitions": [
+        {
+          "status": {
+            "type": {
+              "name": "STATUS_IN_PROGRESS",
+              "state": "in",
+              "completed": false,
+              "description": "In Progress",
+              "detail": "Q3 4:12",
+              "shortDetail": "Q3 4:12"
+            }
+          },
+          "competitors": [
+            {
+              "team": {
+                "abbreviation": "SEA"
+              }
+            },
+            {
+              "team": {
+                "abbreviation": "NE"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

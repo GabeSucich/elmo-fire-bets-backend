@@ -1,0 +1,36 @@
+{
+  "events": [
+    {
+      "id": "9000002",
+      "shortName": "misfiled game (synthetic)",
+      "date": "2026-09-10T00:20:00.000+00:00",
+      "competitions": [
+        {
+          "status": {
+            "type": {
+              "id": "3",
+              "name": "STATUS_FINAL",
+              "state": "post",
+              "completed": true,
+              "description": "Final",
+              "detail": "Final",
+              "shortDetail": "Final"
+            }
+          },
+          "competitors": [
+            {
+              "team": {
+                "abbreviation": "SEA"
+              }
+            },
+            {
+              "team": {
+                "abbreviation": "NE"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

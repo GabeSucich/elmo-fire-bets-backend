@@ -188,9 +188,16 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/GetSeasonParlaysSortParam",
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GetSeasonParlaysSortParam"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "description": "How to sort parlays in query",
-              "default": "asc"
+              "title": "Sort"
             },
             "description": "How to sort parlays in query"
           }
@@ -881,6 +888,54 @@
             "LoginManager": []
           }
         ]
+      }
+    },
+    "/parlays/{parlay_id}/sync_progress": {
+      "post": {
+        "tags": [
+          "Parlays"
+        ],
+        "summary": "Sync Parlay Progress Endpoint",
+        "description": "Read this parlay's legs off the live boxscore.\n\nOpen to anyone in the season, like the season pick sync: it reads a public feed and\nwrites only `live_*` columns, so there is nothing here one gambler can do to another's\npick. It never touches `result` \u2014 void, push and bozo are judgements, and a settled\nresult entered by hand must not be overwritten by a number scraped mid-game.",
+        "operationId": "sync_parlay_progress",
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "parlay_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Parlay Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncParlayProgressResponseData"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/parlays/{parlay_id}/correction_analysis/extract": {
@@ -1756,7 +1811,7 @@
           "SeasonPicks"
         ],
         "summary": "Sync Season Picks Endpoint",
-        "description": "Pull every season pick in this season up to date with ESPN.\n\nAdmin only: it rewrites results across everyone's picks at once, including weeks that\nwere entered by hand. Slow by nature \u2014 one ESPN call per distinct player or team \u2014 so\nit is a deliberate action rather than something a screen triggers on load.\n\nThe only way the sweep runs: nothing else calls it. Weeks stay as they were until an\nadmin presses this, so a spell of ESPN being unreachable is recovered by pressing it\nagain rather than by waiting.",
+        "description": "Pull every season pick in this season up to date with ESPN.\n\nOpen to anyone in the season. It rewrites results across everyone's picks at once,\nincluding weeks entered by hand, but ESPN is the source of truth for all of them \u2014 so\nthere is nothing here one gambler can do to another's pick that the next press would\nnot do anyway. Slow by nature, one ESPN call per distinct player or team, so it stays\na deliberate action rather than something a screen triggers on load.\n\nThe only way the sweep runs: nothing else calls it. Weeks stay as they were until\nsomebody presses this, so a spell of ESPN being unreachable is recovered by pressing\nit again rather than by waiting.",
         "operationId": "sync_season_picks",
         "security": [
           {
@@ -2724,6 +2779,33 @@
             }
           }
         }
+      }
+    },
+    "/admin/sync_players": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Sync Players Endpoint",
+        "description": "Resolve missing ESPN ids across every player target, then correct their teams.\n\nSlow in proportion to how many players the league has ever bet on, and worth running\nafter an offseason rather than on a timer: a badge that is a club out of date is the\nsymptom, and it only appears when somebody moves.",
+        "operationId": "sync_players",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPlayersResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "LoginManager": []
+          }
+        ]
       }
     }
   },
@@ -3748,6 +3830,10 @@
           },
           "state": {
             "$ref": "#/components/schemas/GamblingSeasonState"
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin"
           }
         },
         "type": "object",
@@ -3756,7 +3842,8 @@
           "id",
           "name",
           "year",
-          "state"
+          "state",
+          "is_admin"
         ],
         "title": "ListGamblingSeasonEl"
       },
@@ -4344,6 +4431,51 @@
           "comment_count": {
             "type": "integer",
             "title": "Comment Count"
+          },
+          "live_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Value"
+          },
+          "live_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live State"
+          },
+          "live_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Detail"
+          },
+          "live_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Synced At"
           }
         },
         "type": "object",
@@ -4359,7 +4491,11 @@
           "prop_bet_target",
           "prop_type",
           "reactions",
-          "comment_count"
+          "comment_count",
+          "live_value",
+          "live_state",
+          "live_detail",
+          "live_synced_at"
         ],
         "title": "PickResponseData"
       },
@@ -5294,6 +5430,72 @@
           "success"
         ],
         "title": "SwapParlayOrderResponseData"
+      },
+      "SyncParlayProgressResponseData": {
+        "properties": {
+          "parlay": {
+            "$ref": "#/components/schemas/ParlayResponseData"
+          },
+          "picks_synced": {
+            "type": "integer",
+            "title": "Picks Synced"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped"
+          },
+          "ran": {
+            "type": "boolean",
+            "title": "Ran"
+          }
+        },
+        "type": "object",
+        "required": [
+          "parlay",
+          "picks_synced",
+          "skipped",
+          "ran"
+        ],
+        "title": "SyncParlayProgressResponseData",
+        "description": "The refreshed parlay, plus what the sweep could and could not answer.\n\nThe whole parlay comes back rather than just the numbers: every leg's state and detail\nmay have moved, and re-reading them from one response is simpler than patching each."
+      },
+      "SyncPlayersResponseData": {
+        "properties": {
+          "targets_seen": {
+            "type": "integer",
+            "title": "Targets Seen"
+          },
+          "ids_resolved": {
+            "type": "integer",
+            "title": "Ids Resolved"
+          },
+          "ids_failed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ids Failed"
+          },
+          "team_changes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Team Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "targets_seen",
+          "ids_resolved",
+          "ids_failed",
+          "team_changes"
+        ],
+        "title": "SyncPlayersResponseData",
+        "description": "Enough to tell a sweep that worked from one that quietly matched nothing.\n\n`ids_failed` names the players ESPN could not find, which is the list worth acting on:\na target with no athlete id is invisible to every later refresh until its name is\nfixed."
       },
       "SyncSeasonPicksResponseData": {
         "properties": {

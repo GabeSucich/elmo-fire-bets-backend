@@ -7,6 +7,7 @@ class EnvVarName(StrEnum):
     OPENAI_API_KEY="OPENAI_API_KEY"
     SPORTSODDS_API_KEY="SPORTSODDS_API_KEY"
     SPORTSODDS_FIXTURE_DIR="SPORTSODDS_FIXTURE_DIR"
+    ESPN_FIXTURE_DIR="ESPN_FIXTURE_DIR"
 
 def load_env_var(env_var: EnvVarName):
     return os.environ[env_var.value]

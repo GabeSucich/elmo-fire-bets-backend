@@ -1,7 +1,7 @@
 from email.policy import default
 from tkinter import UNDERLINE
 from typing import *
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel
 
 from sqlalchemy import Select, select
@@ -147,6 +147,13 @@ class PickResponseData(BaseModel):
     prop_type: PropBetType
     reactions: list[PickReactionResponseData]
     comment_count: int
+    # What the last progress sync read. Null everywhere until somebody presses sync on an
+    # open parlay, and null again for a leg whose game has not kicked off — which is why
+    # the state is carried alongside rather than inferred from the value being absent.
+    live_value: float | None
+    live_state: str | None
+    live_detail: str | None
+    live_synced_at: datetime | None
 
     @classmethod
     def from_model(cls, model: Pick):
@@ -165,6 +172,10 @@ class PickResponseData(BaseModel):
             prop_bet_target=PropBetTargetResponseData.from_model(model.prop_bet_target),
             reactions=summarize_reactions(model.reactions),
             comment_count=len([c for c in model.comments if c.archived_at is None]),
+            live_value=model.live_value,
+            live_state=model.live_state,
+            live_detail=model.live_detail,
+            live_synced_at=model.live_synced_at,
         )
 
 class ParlayResponseData(BaseModel):

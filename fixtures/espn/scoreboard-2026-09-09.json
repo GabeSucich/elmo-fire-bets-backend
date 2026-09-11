@@ -1,0 +1,36 @@
+{
+  "events": [
+    {
+      "id": "401872656",
+      "shortName": "NE @ SEA",
+      "date": "2026-09-10T00:20Z",
+      "competitions": [
+        {
+          "status": {
+            "type": {
+              "id": "3",
+              "name": "STATUS_FINAL",
+              "state": "post",
+              "completed": true,
+              "description": "Final",
+              "detail": "Final",
+              "shortDetail": "Final"
+            }
+          },
+          "competitors": [
+            {
+              "team": {
+                "abbreviation": "SEA"
+              }
+            },
+            {
+              "team": {
+                "abbreviation": "NE"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

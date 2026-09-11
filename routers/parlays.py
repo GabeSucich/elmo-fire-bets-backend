@@ -13,6 +13,12 @@ from models.db import Parlay, Pick, PickVeto, User, PropBetType
 from .common import ParlayResponseData,PropBetTargetRequestData, get_or_create_prop_bet_target, check_user_access_to_parlay, check_gambler_access_to_season, check_user_is_gambler, query_parlay_with_selects, update_veto_approval_status, check_season_in_progress
 from .auth import manager
 from utils.parlays import finalize_parlay_results as finalize_parlay_results_helper
+from services.espn.parlay_progress import sync_parlay_progress
+
+# Advisory locks live in one database-wide space, so the parlay id alone could collide
+# with any other feature that ever takes one. The first half of the key names this use.
+_PROGRESS_LOCK_NAMESPACE = 8412
+
 
 router = APIRouter(
     prefix="/parlays", 
@@ -380,4 +386,72 @@ async def swap_parlay_order(
     await db.commit()
     return SwapParlayOrderResponseData(
         success=True
+    )
+
+
+class SyncParlayProgressResponseData(BaseModel):
+    """The refreshed parlay, plus what the sweep could and could not answer.
+
+    The whole parlay comes back rather than just the numbers: every leg's state and detail
+    may have moved, and re-reading them from one response is simpler than patching each.
+    """
+    parlay: ParlayResponseData
+    picks_synced: int
+    skipped: list[str]
+    # False when somebody else's press was already running, in which case nothing was
+    # fetched and the parlay above is whatever their sweep had already written.
+    ran: bool
+
+
+@router.post(
+    "/{parlay_id}/sync_progress",
+    operation_id="sync_parlay_progress",
+    response_model=SyncParlayProgressResponseData,
+)
+async def sync_parlay_progress_endpoint(
+    parlay_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(manager)
+) -> SyncParlayProgressResponseData:
+    """Read this parlay's legs off the live boxscore.
+
+    Open to anyone in the season, like the season pick sync: it reads a public feed and
+    writes only `live_*` columns, so there is nothing here one gambler can do to another's
+    pick. It never touches `result` — void, push and bozo are judgements, and a settled
+    result entered by hand must not be overwritten by a number scraped mid-game.
+    """
+    parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
+    await check_user_access_to_parlay(user, parlay, db)
+
+    if parlay.state != ParlayState.OPEN:
+        raise HTTPException(
+            status_code=409,
+            detail="Progress can only be synced while a parlay is open",
+        )
+
+    # Two people watching the same slate will press this at the same moment. The work is
+    # idempotent, so the risk is not a corrupt write but a pair of duplicate ESPN sweeps
+    # and a second spinner that finishes saying nothing. A transaction-scoped advisory
+    # lock is enough and needs no column: the loser is told immediately rather than made
+    # to wait, and the lock is released by the transaction ending — including by a crash,
+    # which a "refreshing since" timestamp would not survive.
+    acquired = (await db.execute(
+        select(func.pg_try_advisory_xact_lock(_PROGRESS_LOCK_NAMESPACE, parlay_id))
+    )).scalar()
+
+    if not acquired:
+        return SyncParlayProgressResponseData(
+            parlay=ParlayResponseData.from_model(parlay),
+            picks_synced=0,
+            skipped=[],
+            ran=False,
+        )
+
+    report = await sync_parlay_progress(parlay_id, db)
+
+    return SyncParlayProgressResponseData(
+        parlay=ParlayResponseData.from_model((await query_parlay_with_selects(parlay_id, db)).scalar_one()),
+        picks_synced=report.picks_synced,
+        skipped=report.skipped,
+        ran=True,
     )

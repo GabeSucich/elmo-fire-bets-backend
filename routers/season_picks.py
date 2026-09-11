@@ -442,16 +442,20 @@ async def sync_season_picks_endpoint(
 ) -> SyncSeasonPicksResponseData:
     """Pull every season pick in this season up to date with ESPN.
 
-    Admin only: it rewrites results across everyone's picks at once, including weeks that
-    were entered by hand. Slow by nature — one ESPN call per distinct player or team — so
-    it is a deliberate action rather than something a screen triggers on load.
+    Open to anyone in the season. It rewrites results across everyone's picks at once,
+    including weeks entered by hand, but ESPN is the source of truth for all of them — so
+    there is nothing here one gambler can do to another's pick that the next press would
+    not do anyway. Slow by nature, one ESPN call per distinct player or team, so it stays
+    a deliberate action rather than something a screen triggers on load.
 
-    The only way the sweep runs: nothing else calls it. Weeks stay as they were until an
-    admin presses this, so a spell of ESPN being unreachable is recovered by pressing it
-    again rather than by waiting.
+    The only way the sweep runs: nothing else calls it. Weeks stay as they were until
+    somebody presses this, so a spell of ESPN being unreachable is recovered by pressing
+    it again rather than by waiting.
     """
     season = await load_season(season_id, db)
-    require_admin(season, user)
+    # Membership is still required — the dependency below resolves the viewer's gambler
+    # row and refuses anyone who is not in this season.
+    gambler_for_user(season, user)
 
     report = await sync_season_picks(season_id, db)
     return SyncSeasonPicksResponseData(
