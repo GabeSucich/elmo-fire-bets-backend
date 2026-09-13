@@ -4684,6 +4684,17 @@
               }
             ],
             "title": "Player Name"
+          },
+          "espn_athlete_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Espn Athlete Id"
           }
         },
         "type": "object",

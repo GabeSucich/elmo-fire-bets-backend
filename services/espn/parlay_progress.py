@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 
 from models import Parlay, Pick, PropBetTarget
 from .client import SlateGame, fetch_boxscore, fetch_slate_games
+from .sync import athlete_id_for
 from .gamelog import GameStats
 from .stats import NOT_IN_BOXSCORE, resolve, supported
 
@@ -119,6 +120,14 @@ async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressRepo
         report.skipped.append("ESPN was unreachable — try again")
         return report
 
+    # Before the boxscores, because a player is found in one by his numeric id and a target
+    # created through the app arrives without it. Writing, so it is sequential — and after
+    # the first pass on a given player there is nothing left to do.
+    for pick in parlay.picks:
+        target = pick.prop_bet_target
+        if target.player_name and not target.espn_athlete_id:
+            await athlete_id_for(target, db)
+
     # Only the games this parlay actually touches, fetched once each however many legs sit
     # on them — a five-leg parlay is very often two or three fixtures, not five.
     needed = {
@@ -159,6 +168,13 @@ async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressRepo
 
         if not supported(pick.prop_type):
             report.skip(pick, f"{pick.prop_type} cannot be read live")
+            continue
+
+        # Nothing to look him up by, and the attempt above did not find one. Said out loud
+        # rather than left as an empty bar: this reads as progress that will not update,
+        # which is indistinguishable from a player who has simply not done anything yet.
+        if target.player_name and not target.espn_athlete_id:
+            report.skip(pick, f"{target.player_name} could not be matched on ESPN")
             continue
 
         box = boxscores.get(game.event_id)

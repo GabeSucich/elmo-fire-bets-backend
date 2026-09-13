@@ -43,6 +43,10 @@ class PropBetTargetRequestData(BaseModel):
     identifier: str
     team_name: str
     player_name: str | None
+    # ESPN's numeric id for the player, which every stats endpoint wants and the uuid above
+    # is useless for. The search that produced this target already knew it, so carrying it
+    # here is what stops a target being created with no way to look its player up.
+    espn_athlete_id: str | None = None
 
 class VetoVoteResponseData(BaseModel):
     id: int
@@ -249,9 +253,17 @@ async def get_or_create_prop_bet_target(target_request_data: PropBetTargetReques
         target = PropBetTarget(
             identifier=target_request_data.identifier,
             team_name=target_request_data.team_name,
-            player_name=target_request_data.player_name
+            player_name=target_request_data.player_name,
+            espn_athlete_id=target_request_data.espn_athlete_id,
         )
         db.add(target)
+        await db.commit()
+        await db.refresh(target)
+    elif target.espn_athlete_id is None and target_request_data.espn_athlete_id:
+        # An existing target created before the id was carried through. Filling it in here
+        # means picking the player again is enough to heal him, rather than leaving it to
+        # whoever remembers to run the admin sweep.
+        target.espn_athlete_id = target_request_data.espn_athlete_id
         await db.commit()
         await db.refresh(target)
     return target
