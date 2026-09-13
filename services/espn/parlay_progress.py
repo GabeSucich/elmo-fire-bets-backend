@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from models import Parlay, Pick, PropBetTarget
+from models import Parlay, Pick, PropBetTarget, PropBetType
 from .client import SlateGame, fetch_boxscore, fetch_slate_games
 from .sync import athlete_id_for
 from .gamelog import GameStats
@@ -102,6 +102,35 @@ def stat_line(
     )
 
 
+def live_value_for(
+    prop_type: PropBetType, line: GameStats | None, game_state: str,
+) -> float | None:
+    """What a leg reads, given whatever the boxscore had to say about its player.
+
+    Three different kinds of nothing, which the numbers cannot tell apart:
+
+    A player absent from the boxscore entirely. A boxscore lists only those who have
+    recorded something, so what that means depends on whether there is still time to
+    record it — ten minutes in, a receiver who has not been thrown at yet is simply on
+    nought, and showing no bar at all reads as one that is broken rather than a bet that
+    has not started moving. Once the game is over the same absence means he never took the
+    field, which is a void rather than a nought, and stays unanswered.
+
+    A player who is there with no line for this stat — a receiver with no carries — really
+    has run for nothing. The same reading the season pick sync takes.
+
+    A market the boxscore does not carry at all, where a nought would be a number nobody
+    measured.
+    """
+    if line is None:
+        return 0.0 if game_state == "in" else None
+
+    value = resolve(prop_type, line)
+    if value is not None:
+        return value
+    return None if prop_type in NOT_IN_BOXSCORE else 0.0
+
+
 async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressReport:
     """Bring one parlay's picks up to date with what is happening on the field."""
     report = ProgressReport(parlay_id=parlay_id)
@@ -184,23 +213,7 @@ async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressRepo
             report.skip(pick, "ESPN did not return a boxscore — try again")
             continue
 
-        line = stat_line(target, box, game)
-        if line is None:
-            # Left alone rather than zeroed. A player absent from the boxscore has not
-            # taken the field, which is not the same as having done nothing — and the
-            # pick is usually voided rather than lost.
-            pick.live_value = None
-        else:
-            value = resolve(pick.prop_type, line)
-            # He is out there and has none of it yet, which is a zero. The same reading the
-            # season sync takes: a receiver with no carries really has run for nothing.
-            # Except where the boxscore simply does not carry the market, where a zero
-            # would be a number nobody measured.
-            pick.live_value = (
-                value if value is not None
-                else None if pick.prop_type in NOT_IN_BOXSCORE
-                else 0.0
-            )
+        pick.live_value = live_value_for(pick.prop_type, stat_line(target, box, game), game.state)
         report.picks_synced += 1
 
     await db.commit()

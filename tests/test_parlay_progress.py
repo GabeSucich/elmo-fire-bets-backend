@@ -165,3 +165,47 @@ def test_the_markets_a_boxscore_cannot_express_are_named():
     for readable in (PropBetType.REC_YDS, PropBetType.RUSH_YDS, PropBetType.TDS,
                      PropBetType.FGS, PropBetType.PASSING_INTS, PropBetType.SACKS):
         assert readable not in NOT_IN_BOXSCORE
+
+
+class TestLiveValue:
+    """The three kinds of nothing a boxscore can mean.
+
+    A boxscore lists only players who have recorded something, so an absence is ambiguous
+    on its own and the game's state is what settles it.
+    """
+
+    def test_absent_from_a_game_in_play_is_nought(self):
+        """He is out there and has not been thrown at yet.
+
+        This is the one that had a receiver's bar not appearing at all ten minutes into a
+        game — read as a feature that had stopped working rather than a bet at nought.
+        """
+        from services.espn.parlay_progress import live_value_for
+        assert live_value_for(PropBetType.REC_YDS, None, "in") == 0.0
+
+    def test_absent_from_a_finished_game_is_unanswered(self):
+        """He never took the field, which is a void rather than a nought."""
+        from services.espn.parlay_progress import live_value_for
+        assert live_value_for(PropBetType.REC_YDS, None, "post") is None
+
+    def test_absent_before_kickoff_is_unanswered(self):
+        from services.espn.parlay_progress import live_value_for
+        assert live_value_for(PropBetType.REC_YDS, None, "pre") is None
+
+    def test_present_with_no_line_for_this_stat_is_nought(self):
+        """A receiver with no carries really has run for nothing."""
+        from services.espn.parlay_progress import live_value_for
+        brown = line_for("401872656", "NE", BROWN)
+        assert resolve(PropBetType.RUSH_YDS, brown) is None, "he has no rushing entry"
+        assert live_value_for(PropBetType.RUSH_YDS, brown, "post") == 0.0
+
+    def test_a_market_the_boxscore_does_not_carry_stays_unanswered(self):
+        """A nought here would be a number nobody measured."""
+        from services.espn.parlay_progress import live_value_for
+        maye = line_for("401872656", "NE", "4431452")
+        assert live_value_for(PropBetType.LONGEST_COMPLETION, maye, "post") is None
+
+    def test_a_real_figure_is_passed_through(self):
+        from services.espn.parlay_progress import live_value_for
+        jsn = line_for("401872656", "SEA", JSN)
+        assert live_value_for(PropBetType.REC_YDS, jsn, "post") == 122.0
