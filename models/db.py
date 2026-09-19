@@ -299,3 +299,68 @@ class FeedbackRating(Base):
     value: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
     feedback: Mapped["Feedback"] = relationship(back_populates="ratings")
+
+
+class PickList(Base):
+    """A named list of picks a season keeps opinions on — today only the ban list.
+
+    The list is per season rather than per gambler, and it is the *items* that carry whose
+    entry they are. That is what lets one screen show everybody's bans side by side without
+    a list row per person, and what makes a second list type a row rather than a table.
+    """
+    __tablename__ = "pick_lists"
+    __table_args__ = (
+        UniqueConstraint("gambling_season_id", "list_type", name="uq_pick_list_season_type"),
+    )
+
+    gambling_season_id: Mapped[int] = mapped_column(ForeignKey("gambling_seasons.id"))
+    list_type: Mapped[PickListType] = mapped_column(SQLEnum(PickListType))
+    # The name shown on the chip. Stored rather than derived from the type so a season can
+    # call its ban list something else without the type meaning anything different.
+    display_name: Mapped[str] = mapped_column(String)
+
+    gambling_season: Mapped["GamblingSeason"] = relationship()
+    items: Mapped[list["PickListItem"]] = relationship(
+        back_populates="pick_list", cascade="all, delete-orphan"
+    )
+
+
+class PickListItem(Base):
+    """One gambler's entry on one list: a player, optionally narrowed to a market and a side.
+
+    Both narrowings are independently optional, which is the whole expressiveness of the
+    thing: "Jamarr Chase" bans him outright, "Jamarr Chase / Rec Yards" bans that market
+    either way, and "MHJ / Over" bans every over on him and no under. An entry is one
+    banned bet — wanting MHJ's rec yards over *and* his TDs under is two rows, not one row
+    with two markets on it.
+    """
+    __tablename__ = "pick_list_items"
+
+    pick_list_id: Mapped[int] = mapped_column(ForeignKey("pick_lists.id"))
+    gambler_id: Mapped[int] = mapped_column(ForeignKey("gamblers.id"))
+    prop_bet_target_id: Mapped[int] = mapped_column(ForeignKey("prop_bet_targets.id"))
+    # Null means every market on this target.
+    prop_type: Mapped[PropBetType | None] = mapped_column(SQLEnum(PropBetType), nullable=True, default=None)
+    # Null means both sides. Set, it matches only that side — an entry on the over says
+    # nothing about somebody taking the under.
+    direction: Mapped[PropBetDirection | None] = mapped_column(SQLEnum(PropBetDirection), nullable=True, default=None)
+
+    pick_list: Mapped["PickList"] = relationship(back_populates="items")
+    gambler: Mapped["Gambler"] = relationship()
+    prop_bet_target: Mapped["PropBetTarget"] = relationship()
+
+    def matches(self, prop_bet_target_id: int, prop_type: PropBetType | None, direction: PropBetDirection | None) -> bool:
+        """Whether a bet falls under this entry.
+
+        The one place the narrowing rules live: an unset field on the entry matches
+        anything, a set one has to agree. Everything that decides whether a pick is on
+        somebody's list goes through here, so the badge on a parlay and any later list
+        type can never drift apart on what "on the list" means.
+        """
+        if self.prop_bet_target_id != prop_bet_target_id:
+            return False
+        if self.prop_type is not None and self.prop_type != prop_type:
+            return False
+        if self.direction is not None and self.direction != direction:
+            return False
+        return True

@@ -12,6 +12,9 @@ from fastapi import HTTPException
 from models import (
     PICK_REACTION_EMOJI,
     PickComment,
+    PickList,
+    PickListItem,
+    PickListType,
     PickReaction,
     VetoVote,
     VetoApprovalStatus,
@@ -138,6 +141,103 @@ class PickReactionResponseData(BaseModel):
     gambler_ids: list[int]
 
 
+class PickListPlacementEntryResponseData(BaseModel):
+    """One gambler's reason this pick is on one list.
+
+    At most one per gambler per list, even where several of their entries catch the same
+    bet — "Jamarr Chase" and "Jamarr Chase / Rec Yards / Over" both match the same pick,
+    and naming the same person twice in the drawer says nothing the first line did not.
+    The narrower entry is the one kept: it is the one that describes this bet.
+    """
+    gambler_id: int
+    # Null for the broader entries — no market means every market, no side means both.
+    prop_type: PropBetType | None
+    direction: PropBetDirection | None
+
+
+class PickListPlacementResponseData(BaseModel):
+    """A pick's standing on one of the season's lists.
+
+    One of these per list the pick lands on, carrying a row per gambler rather than a
+    count — the same trade PickReactionResponseData makes. The season context already has
+    every gambler by id, so the badge's number, whether the reader is among them and the
+    names in the drawer all come off this with no second request.
+    """
+    pick_list_id: int
+    list_type: PickListType
+    display_name: str
+    entries: list[PickListPlacementEntryResponseData]
+
+
+def _specificity(item: PickListItem) -> int:
+    """How narrowly an entry describes a bet, for choosing between two that both match."""
+    return (item.prop_type is not None) + (item.direction is not None)
+
+
+class PickListIndex:
+    """Every list entry in one season, arranged for asking what a pick lands on.
+
+    Built once per request and handed down, because the alternative is a query per pick on
+    a screen that shows dozens. Grouped by target first: the overwhelming majority of picks
+    match nothing, and those cost one dict lookup.
+    """
+
+    def __init__(self, items: Iterable[PickListItem]):
+        self._by_target: dict[int, list[PickListItem]] = {}
+        for item in items:
+            self._by_target.setdefault(item.prop_bet_target_id, []).append(item)
+
+    def placements_for(self, pick: Pick) -> list[PickListPlacementResponseData]:
+        candidates = self._by_target.get(pick.prop_bet_target_id)
+        if not candidates:
+            return []
+
+        # list id -> gambler id -> the narrowest entry of theirs that catches this bet.
+        by_list: dict[int, dict[int, PickListItem]] = {}
+        lists: dict[int, PickList] = {}
+        for item in candidates:
+            if not item.matches(pick.prop_bet_target_id, pick.prop_type, pick.direction):
+                continue
+            lists[item.pick_list_id] = item.pick_list
+            held = by_list.setdefault(item.pick_list_id, {})
+            incumbent = held.get(item.gambler_id)
+            if incumbent is None or _specificity(item) > _specificity(incumbent):
+                held[item.gambler_id] = item
+
+        return [
+            PickListPlacementResponseData(
+                pick_list_id=list_id,
+                list_type=lists[list_id].list_type,
+                display_name=lists[list_id].display_name,
+                entries=[
+                    PickListPlacementEntryResponseData(
+                        gambler_id=gambler_id,
+                        prop_type=item.prop_type,
+                        direction=item.direction,
+                    )
+                    # Sorted so a redraw cannot reorder the drawer under the reader.
+                    for gambler_id, item in sorted(held.items())
+                ],
+            )
+            for list_id, held in sorted(by_list.items())
+        ]
+
+
+async def build_pick_list_index(gambling_season_id: int, db: AsyncSession) -> PickListIndex:
+    """One round trip for a whole page's worth of list badges.
+
+    joinedload rather than selectinload on the list: it is to-one, so it folds into the
+    query already going out instead of costing a second crossing.
+    """
+    items = (await db.execute(
+        select(PickListItem)
+        .join(PickList, PickListItem.pick_list_id == PickList.id)
+        .where(PickList.gambling_season_id == gambling_season_id)
+        .options(joinedload(PickListItem.pick_list))
+    )).scalars().all()
+    return PickListIndex(items)
+
+
 class PickResponseData(BaseModel):
     id: int
     gambler_id: int
@@ -158,9 +258,13 @@ class PickResponseData(BaseModel):
     live_state: str | None
     live_detail: str | None
     live_synced_at: datetime | None
+    # Which of the season's lists this bet lands on, and whose entries put it there. Empty
+    # on a closed parlay, which is a record rather than a decision anyone can still change
+    # — see ParlayResponseData.from_model, which is where that is decided.
+    list_placements: list[PickListPlacementResponseData]
 
     @classmethod
-    def from_model(cls, model: Pick):
+    def from_model(cls, model: Pick, pick_lists: "PickListIndex | None" = None):
         vetoes = [veto for veto in model.vetoes if veto.approval_status != VetoApprovalStatus.UNDECIDED]
         veto = None if len(vetoes) == 0 else vetoes[0]
         return cls(
@@ -180,6 +284,7 @@ class PickResponseData(BaseModel):
             live_state=model.live_state,
             live_detail=model.live_detail,
             live_synced_at=model.live_synced_at,
+            list_placements=pick_lists.placements_for(model) if pick_lists else [],
         )
 
 class ParlayResponseData(BaseModel):
@@ -197,8 +302,12 @@ class ParlayResponseData(BaseModel):
     order: int
 
     @classmethod
-    def from_model(cls, model: Parlay):
-        picks=[PickResponseData.from_model(pick) for pick in model.picks]
+    def from_model(cls, model: Parlay, pick_lists: "PickListIndex | None" = None):
+        # A closed lay is history: nobody can act on being told a leg was on someone's ban
+        # list, so the badges come off rather than sitting there as a reproach. Decided
+        # here rather than at each call site, so no endpoint can get it wrong on its own.
+        index = None if model.state == ParlayState.CLOSED else pick_lists
+        picks=[PickResponseData.from_model(pick, index) for pick in model.picks]
         return cls(
             id=model.id,
             owner_id=model.owner_id,
@@ -211,7 +320,29 @@ class ParlayResponseData(BaseModel):
             result=model.result,
             order=model.order
         )
-    
+
+
+async def build_pick_list_index_for_parlay(parlay: Parlay, db: AsyncSession) -> PickListIndex | None:
+    """The index this parlay's badges need, or None where none are drawn.
+
+    The closed case is the point: skipping it here means a closed lay does not pay for a
+    query whose every answer would be thrown away by from_model.
+    """
+    if parlay.state == ParlayState.CLOSED:
+        return None
+    return await build_pick_list_index(parlay.gambling_season_id, db)
+
+
+async def parlay_response(parlay: Parlay, db: AsyncSession) -> ParlayResponseData:
+    """One parlay, with its list badges filled in.
+
+    What every endpoint returning a single parlay should use, so none of them has to
+    remember to fetch the index — forgetting reads as the badges silently vanishing the
+    moment anybody edits the lay.
+    """
+    return ParlayResponseData.from_model(parlay, await build_pick_list_index_for_parlay(parlay, db))
+
+
 async def get_required_veto_vote_count(veto: PickVeto, db: AsyncSession):
     pick = (await db.execute(
         select(Pick).where(Pick.id == veto.pick_id)

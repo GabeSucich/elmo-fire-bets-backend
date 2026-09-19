@@ -10,7 +10,7 @@ from database import get_db
 from models.constants import ParlayResult, ParlayState, SlateType, PropBetDirection, SauceFactor
 from models.db import Parlay, Pick, PickVeto, User, PropBetType
 
-from .common import ParlayResponseData,PropBetTargetRequestData, get_or_create_prop_bet_target, check_user_access_to_parlay, check_gambler_access_to_season, check_user_is_gambler, query_parlay_with_selects, update_veto_approval_status, check_season_in_progress
+from .common import ParlayResponseData, parlay_response, PropBetTargetRequestData, get_or_create_prop_bet_target, check_user_access_to_parlay, check_gambler_access_to_season, check_user_is_gambler, query_parlay_with_selects, update_veto_approval_status, check_season_in_progress
 from .auth import manager
 from utils.parlays import finalize_parlay_results as finalize_parlay_results_helper
 from services.espn.parlay_progress import sync_parlay_progress
@@ -35,7 +35,7 @@ async def get_parlay(parlay_id: int, db: AsyncSession=Depends(get_db), user: Use
     await check_user_access_to_parlay(user, parlay, db)
 
     return GetParlayResponseData(
-        parlay=ParlayResponseData.from_model(parlay)
+        parlay=await parlay_response(parlay, db)
     )
 
 class CreateParlayRequestData(BaseModel):
@@ -79,7 +79,7 @@ async def create_parlay(
     response_parlay = (await query_parlay_with_selects(parlay.id, db)).scalar_one()
 
     return CreateParlayResponseData(
-        parlay=ParlayResponseData.from_model(response_parlay)
+        parlay=await parlay_response(response_parlay, db)
     )
 
 class UpdateParlayRequestData(BaseModel):
@@ -139,7 +139,7 @@ async def update_parlay(
         parlay = (await query_parlay_with_selects(body.parlay_id, db)).scalar_one()
     
     return UpdateParlayResponseData(
-        parlay=ParlayResponseData.from_model(parlay)
+        parlay=await parlay_response(parlay, db)
     )
 
 class ClaimParlayRequestData(BaseModel):
@@ -226,7 +226,7 @@ async def unlock_parlay(
     db.expire_all()
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
     return UnlockParlayResponseData(
-        parlay=ParlayResponseData.from_model(parlay)
+        parlay=await parlay_response(parlay, db)
     )
 
 @router.post("/{parlay_id}/lock", operation_id="lock_parlay", response_model=LockParlayResponseData)
@@ -260,7 +260,7 @@ async def lock_parlay(
 
     refreshed_parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
     return LockParlayResponseData(
-        parlay=ParlayResponseData.from_model(refreshed_parlay)
+        parlay=await parlay_response(refreshed_parlay, db)
     )
 
 class FinalizeParlayResultsRequestData(BaseModel): ...
@@ -289,7 +289,7 @@ async def finalize_parlay_results(
     updated_parlay, possible_results = await finalize_parlay_results_helper(parlay, db)
 
     return FinalizeParlayResultsResponseData(
-        parlay=ParlayResponseData.from_model(updated_parlay),
+        parlay=await parlay_response(updated_parlay, db),
         possible_results=possible_results
     )
 
@@ -327,7 +327,7 @@ async def close_parlay(
 
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
     return CloseParlayResponseData(
-        parlay=ParlayResponseData.from_model(parlay)
+        parlay=await parlay_response(parlay, db)
     )
 
 class ReopenParlayRequestData(BaseModel): ...
@@ -357,7 +357,7 @@ async def reopen_parlay(
     db.expire_all()
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
     return ReopenParlayResponseData(
-        parlay=ParlayResponseData.from_model(parlay)
+        parlay=await parlay_response(parlay, db)
     )
 
 class DeleteParlayResponseData(BaseModel):
@@ -465,7 +465,7 @@ async def sync_parlay_progress_endpoint(
 
     if not acquired:
         return SyncParlayProgressResponseData(
-            parlay=ParlayResponseData.from_model(parlay),
+            parlay=await parlay_response(parlay, db),
             picks_synced=0,
             skipped=[],
             ran=False,
@@ -474,7 +474,7 @@ async def sync_parlay_progress_endpoint(
     report = await sync_parlay_progress(parlay_id, db)
 
     return SyncParlayProgressResponseData(
-        parlay=ParlayResponseData.from_model((await query_parlay_with_selects(parlay_id, db)).scalar_one()),
+        parlay=await parlay_response((await query_parlay_with_selects(parlay_id, db)).scalar_one(), db),
         picks_synced=report.picks_synced,
         skipped=report.skipped,
         ran=True,

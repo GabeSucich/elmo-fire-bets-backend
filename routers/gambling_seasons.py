@@ -20,7 +20,7 @@ from models import (
 )
 from database import get_db
 from .auth import manager
-from .common import GamblerResponseData, ParlayResponseData, add_selects_to_parlay_query
+from .common import GamblerResponseData, ParlayResponseData, add_selects_to_parlay_query, build_pick_list_index
 
 from services.loss_ledger import loss_ledger
 from services.season_money import season_money
@@ -147,9 +147,17 @@ async def get_season_parlays(
     parlays = result.scalars().all()
     next_offset = offset + len(parlays)
 
+    # One index for the whole page rather than one per parlay. Closed lays draw no badges
+    # and from_model drops the index for them anyway, so a page of nothing but closed lays
+    # skips the query entirely.
+    pick_lists = (
+        None if all(p.state == ParlayState.CLOSED for p in parlays)
+        else await build_pick_list_index(season_id, db)
+    )
+
     return GetSeasonParlaysResponseData(
         next_offset=next_offset,
-        parlays=[ParlayResponseData.from_model(p) for p in parlays]
+        parlays=[ParlayResponseData.from_model(p, pick_lists) for p in parlays]
     )
 
 class GetSeasonGamblerPerformancesResponseData(BaseModel):

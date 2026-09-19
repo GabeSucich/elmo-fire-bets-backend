@@ -31,6 +31,7 @@ from .auth import manager
 from .common import (
     PickReactionResponseData,
     PickResponseData,
+    build_pick_list_index_for_parlay,
     check_season_in_progress,
     query_pick_with_selects,
     summarize_reactions,
@@ -166,7 +167,10 @@ async def react_to_pick(
     await db.commit()
 
     return PickResponse(pick=PickResponseData.from_model(
-        (await query_pick_with_selects(pick_id, db)).scalar_one()
+        (await query_pick_with_selects(pick_id, db)).scalar_one(),
+        # The client replaces its whole pick object with this one, so leaving the
+        # placements off would make tapping an emoji clear the list badges off the card.
+        await build_pick_list_index_for_parlay(pick.parlay, db),
     ))
 
 

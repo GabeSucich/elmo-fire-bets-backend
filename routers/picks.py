@@ -23,6 +23,7 @@ from models import (
 from .auth import manager
 from .common import (
     PickResponseData,
+    build_pick_list_index_for_parlay,
     PropBetTargetRequestData,
     get_or_create_prop_bet_target,
     map_pick_result_to_veto_result,
@@ -110,7 +111,7 @@ async def create_pick(
     pick = (await query_pick_with_selects(pick.id, db)).scalar_one()
     
     return CreatePickResponseData(
-        pick=PickResponseData.from_model(pick)
+        pick=PickResponseData.from_model(pick, await build_pick_list_index_for_parlay(parlay, db))
     )
 
 class UpdatePickRequestData(BaseModel):
@@ -177,7 +178,7 @@ async def update_pick(
     pick = (await query_pick_with_selects(pick.id, db)).scalar_one()
     
     return UpdatePickResponseData(
-        pick=PickResponseData.from_model(pick)
+        pick=PickResponseData.from_model(pick, await build_pick_list_index_for_parlay(parlay, db))
     )
 
 class OverridePickRequestData(UpdatePickRequestData):
@@ -222,7 +223,7 @@ async def apply_pick_override(
     await db.commit()
     pick = (await query_pick_with_selects(pick.id, db)).scalar_one()
     return OverridePickResponseData(
-        pick=PickResponseData.from_model(pick)
+        pick=PickResponseData.from_model(pick, await build_pick_list_index_for_parlay(parlay, db))
     )
 
 class BasicPickResult(StrEnum):
@@ -267,7 +268,7 @@ async def update_pick_result(
     await db.commit()
     pick = (await query_pick_with_selects(pick_id, db)).scalar_one()
     return UpdatePickResultResponseData(
-        pick = PickResponseData.from_model(pick)
+        pick = PickResponseData.from_model(pick, await build_pick_list_index_for_parlay(parlay, db))
     )
 
     
