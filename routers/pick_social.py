@@ -153,6 +153,15 @@ async def react_to_pick(
     in the open drawer — the same array — move together.
     """
     pick, viewer = await prepare_write(pick_id, user, db)
+    # Held in a local, because query_pick_with_selects below carries populate_existing and
+    # refreshes this very Pick with its own loader set — a set that does not include
+    # Pick.parlay. The relationship prepare_write eagerly loaded is dropped from the
+    # instance, so reading pick.parlay after that point is a lazy load, and a lazy load
+    # under asyncio raises MissingGreenlet rather than emitting a query. It raises after
+    # the commit, which is the worst shape available: the reaction is saved and the caller
+    # still gets a 500, so the emoji appears on the next refresh having reported a failure.
+    # Every other caller of query_pick_with_selects keeps its parlay in a local already.
+    parlay = pick.parlay
 
     if body.emoji not in PICK_REACTION_EMOJI:
         raise HTTPException(status_code=400, detail="That is not one of the reactions you can leave")
@@ -166,11 +175,12 @@ async def react_to_pick(
         await db.delete(existing)
     await db.commit()
 
+    fresh = (await query_pick_with_selects(pick_id, db)).scalar_one()
     return PickResponse(pick=PickResponseData.from_model(
-        (await query_pick_with_selects(pick_id, db)).scalar_one(),
+        fresh,
         # The client replaces its whole pick object with this one, so leaving the
         # placements off would make tapping an emoji clear the list badges off the card.
-        await build_pick_list_index_for_parlay(pick.parlay, db),
+        await build_pick_list_index_for_parlay(parlay, db),
     ))
 
 
