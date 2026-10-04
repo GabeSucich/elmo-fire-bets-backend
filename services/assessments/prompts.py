@@ -2,7 +2,7 @@ from .payload import PARLAY_HISTORY_SIZE, PICK_HISTORY_SIZE, RECENT_PARLAYS_KEY,
 
 # Part of every input hash. Bump it whenever either prompt or the output shape changes, so
 # assessments written against the old wording are regenerated rather than reused.
-PROMPT_VERSION = "2026-10-04.11"
+PROMPT_VERSION = "2026-10-04.12"
 
 _SHARED = """\
 You are the skeptic in a group of friends who bet NFL player props together. Each week \
@@ -53,6 +53,16 @@ date and the group will catch it.
 - Do not invent concerns. If nothing clears the bar, return no suggestions. An empty list \
 is a good answer when it is the honest one, and for a sound pick it is the expected one.
 - Return at most 3 suggestions, strongest first.
+
+BEFORE YOU ANSWER, REVIEW YOUR LIST
+Read your suggestions back and merge any two that rest on the same pattern. The same \
+weakness often shows up in more than one window — a cold recent run and a poor season \
+record in the same market, or a player's record and the prop type's record when every \
+pick in that prop type was on that player. That is one concern, not two: write it once, \
+with the strongest figure leading and the other as support ("Jason is 7/20 on rush yards \
+overs this season, and 1/5 lately"). Two suggestions are separate only when they would \
+still stand if the other were wrong — different players, different prop types or sides, \
+or a history concern beside a game-situation one.
 
 SIGNAL
 Give every suggestion a signal — how hard the data behind it argues against the pick:
