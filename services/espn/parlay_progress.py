@@ -4,9 +4,12 @@ Deliberately separate from the season pick sync. That one asks what a player has
 year; this one asks what is happening in one slate, right now, and answers per pick rather
 than per week.
 
-Nothing here writes Pick.result. A void, a push and a bozo are judgements about a bet that
-no feed can make, and a settled result someone entered by hand must never be overwritten by
-a number scraped mid-game.
+Once a game is final, a leg the boxscore can answer is settled here too: Win, Loss or
+Push, read straight off the number against the line. Everything that needs judgement stays
+with a person. A player missing from a finished boxscore is most likely a void, so it is
+left unsettled; a result already entered is never overwritten; and BOZO is decided when
+the parlay is finalized, from all the legs together, exactly as for a result entered by
+hand.
 """
 import asyncio
 import datetime
@@ -17,8 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from models import Parlay, Pick, PropBetTarget, PropBetType
+from models import Parlay, Pick, PickResult, PropBetDirection, PropBetTarget, PropBetType
+from utils.parlays import apply_pick_result
 from .client import SlateGame, fetch_boxscore, fetch_slate_games
+from .game_context import apply_game_context, game_for
 from .sync import athlete_id_for
 from .gamelog import GameStats
 from .stats import NOT_IN_BOXSCORE, resolve, supported
@@ -41,6 +46,8 @@ class ProgressReport:
     parlay_id: int
     picks_seen: int = 0
     picks_synced: int = 0
+    # Legs given a result because their game went final during this press.
+    picks_settled: int = 0
     skipped: list[str] = field(default_factory=list)
 
     def skip(self, pick: Pick, why: str) -> None:
@@ -53,19 +60,6 @@ class ProgressReport:
         target = pick.prop_bet_target
         who = target.player_name or target.team_name or f"pick {pick.id}"
         self.skipped.append(f"{who}: {why}")
-
-
-def game_for(target: PropBetTarget, games: list[SlateGame]) -> SlateGame | None:
-    """The game a target is playing in on this slate, found by its team.
-
-    Team is the only link available: a pick records who the bet is on, never which fixture.
-    That makes the team on a target load-bearing rather than decorative — a player whose
-    club is a season out of date is matched to the wrong game or to none at all, which is
-    what the admin player sync exists to prevent.
-    """
-    if not target.team_name:
-        return None
-    return next((g for g in games if target.team_name in g.teams), None)
 
 
 def stat_line(
@@ -131,6 +125,26 @@ def live_value_for(
     return None if prop_type in NOT_IN_BOXSCORE else 0.0
 
 
+def result_from_final(pick: Pick, value: float) -> PickResult:
+    """The gambler's call against the final number: the line that was actually bet, and
+    the side they called — a veto is carried onto its own result by apply_pick_result,
+    the same as when a person enters one."""
+    line = pick.corrected_line if pick.corrected_line is not None else pick.line
+    if value == line:
+        return PickResult.PUSH
+    went_over = value > line
+    called_over = pick.direction == PropBetDirection.OVER
+    return PickResult.WIN if went_over == called_over else PickResult.LOSS
+
+
+def settle_if_final(pick: Pick, game_state: str) -> bool:
+    """Give a leg its result if its game is over and the boxscore answered. True if set."""
+    if game_state != "post" or pick.result is not None or pick.live_value is None:
+        return False
+    apply_pick_result(pick, result_from_final(pick, pick.live_value))
+    return True
+
+
 async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressReport:
     """Bring one parlay's picks up to date with what is happening on the field."""
     report = ProgressReport(parlay_id=parlay_id)
@@ -139,6 +153,8 @@ async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressRepo
         select(Parlay)
         .where(Parlay.id == parlay_id)
         .options(selectinload(Parlay.picks).selectinload(Pick.prop_bet_target))
+        # Settling a leg carries its result onto an approved veto.
+        .options(selectinload(Parlay.picks).selectinload(Pick.vetoes))
     )).scalar_one_or_none()
     if parlay is None:
         report.skipped.append(f"parlay {parlay_id} does not exist")
@@ -184,6 +200,9 @@ async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressRepo
                               f"{parlay.competition_date.strftime('%m/%d')}")
             continue
 
+        # The slate is already in hand, so pick assessments get their game context for free.
+        apply_game_context(pick, game)
+
         # Recorded even before kickoff, and that is the point: it is what lets a card say
         # "yet to start" rather than showing a zero nobody has earned yet.
         pick.live_state = game.state
@@ -214,11 +233,13 @@ async def sync_parlay_progress(parlay_id: int, db: AsyncSession) -> ProgressRepo
             continue
 
         pick.live_value = live_value_for(pick.prop_type, stat_line(target, box, game), game.state)
+        if settle_if_final(pick, game.state):
+            report.picks_settled += 1
         report.picks_synced += 1
 
     await db.commit()
     logger.info(
-        "parlay %s progress: %d/%d picks, %d skipped",
-        parlay_id, report.picks_synced, report.picks_seen, len(report.skipped),
+        "parlay %s progress: %d/%d picks, %d settled, %d skipped",
+        parlay_id, report.picks_synced, report.picks_seen, report.picks_settled, len(report.skipped),
     )
     return report

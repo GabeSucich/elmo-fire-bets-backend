@@ -17,6 +17,7 @@ from routers.pick_social import router as pick_social_router
 from routers.odds import router as odds_router
 from routers.admin import router as admin_router
 from routers.pick_lists import router as pick_lists_router
+from routers.assessments import router as assessments_router
 
 app = FastAPI()
 
@@ -50,3 +51,4 @@ app.include_router(pick_social_router)
 app.include_router(odds_router)
 app.include_router(admin_router)
 app.include_router(pick_lists_router)
+app.include_router(assessments_router)

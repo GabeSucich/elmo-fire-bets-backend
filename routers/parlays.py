@@ -14,6 +14,7 @@ from .common import ParlayResponseData, parlay_response, PropBetTargetRequestDat
 from .auth import manager
 from utils.parlays import finalize_parlay_results as finalize_parlay_results_helper
 from services.espn.parlay_progress import sync_parlay_progress
+from services.espn.game_context import fill_game_context
 
 # Advisory locks live in one database-wide space, so the parlay id alone could collide
 # with any other feature that ever takes one. The first half of the key names this use.
@@ -322,6 +323,11 @@ async def close_parlay(
     
     parlay.result = body.parlay_result
     parlay.state = ParlayState.CLOSED
+    # The last moment the target's team is sure to be the one that played, and the one
+    # point every parlay passes through whether or not anybody synced it — so this is where
+    # the final score reaches a pick assessment's history. Best effort: ESPN being down
+    # leaves the context unfilled, never the parlay unclosed.
+    await fill_game_context([parlay])
     await db.commit()
     db.expire_all()
 
@@ -421,6 +427,8 @@ class SyncParlayProgressResponseData(BaseModel):
     """
     parlay: ParlayResponseData
     picks_synced: int
+    # Legs given a result this press because their game went final.
+    picks_settled: int
     skipped: list[str]
     # False when somebody else's press was already running, in which case nothing was
     # fetched and the parlay above is whatever their sweep had already written.
@@ -439,10 +447,11 @@ async def sync_parlay_progress_endpoint(
 ) -> SyncParlayProgressResponseData:
     """Read this parlay's legs off the live boxscore.
 
-    Open to anyone in the season, like the season pick sync: it reads a public feed and
-    writes only `live_*` columns, so there is nothing here one gambler can do to another's
-    pick. It never touches `result` — void, push and bozo are judgements, and a settled
-    result entered by hand must not be overwritten by a number scraped mid-game.
+    Open to anyone in the season, like the season pick sync: it reads a public feed, and
+    the only results it writes are the ones a final boxscore decides outright — Win, Loss
+    or Push on a leg with no result yet. A result entered by hand is never overwritten, a
+    player missing from a final boxscore is left for a person to call void, and BOZO is
+    still decided at finalization.
     """
     parlay = (await query_parlay_with_selects(parlay_id, db)).scalar_one()
     await check_user_access_to_parlay(user, parlay, db)
@@ -467,6 +476,7 @@ async def sync_parlay_progress_endpoint(
         return SyncParlayProgressResponseData(
             parlay=await parlay_response(parlay, db),
             picks_synced=0,
+            picks_settled=0,
             skipped=[],
             ran=False,
         )
@@ -476,6 +486,7 @@ async def sync_parlay_progress_endpoint(
     return SyncParlayProgressResponseData(
         parlay=await parlay_response((await query_parlay_with_selects(parlay_id, db)).scalar_one(), db),
         picks_synced=report.picks_synced,
+        picks_settled=report.picks_settled,
         skipped=report.skipped,
         ran=True,
     )

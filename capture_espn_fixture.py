@@ -7,6 +7,7 @@ to keep one.
 
     uv run capture_espn_fixture.py 2026-09-09
     uv run capture_espn_fixture.py 2026-09-13 --event 401872656
+    uv run capture_espn_fixture.py 2026-10-11 --scoreboard-only
 
 Writes <ESPN_FIXTURE_DIR>/scoreboard-<date>.json and summary-<event>.json for every game
 on the slate. With that variable set, services/espn reads these instead of calling out.
@@ -40,10 +41,22 @@ def prune_scoreboard(body: dict) -> dict:
             "id": e.get("id"),
             "shortName": e.get("shortName"),
             "date": e.get("date"),
+            "week": e.get("week"),
+            "weather": e.get("weather"),
             "competitions": [{
                 "status": {"type": ((c.get("status") or {}).get("type") or {})},
+                "neutralSite": c.get("neutralSite"),
+                "venue": {"indoor": (c.get("venue") or {}).get("indoor")},
+                "odds": [
+                    {"spread": o.get("spread"), "overUnder": o.get("overUnder"), "details": o.get("details")}
+                    for o in (c.get("odds") or [])[:1]
+                ],
                 "competitors": [
-                    {"team": {"abbreviation": (comp.get("team") or {}).get("abbreviation")}}
+                    {
+                        "homeAway": comp.get("homeAway"),
+                        "score": comp.get("score"),
+                        "team": {"abbreviation": (comp.get("team") or {}).get("abbreviation")},
+                    }
                     for comp in (c.get("competitors") or [])
                 ],
             } for c in (e.get("competitions") or [])],
@@ -86,13 +99,15 @@ def _write(directory: str, name: str, body: dict) -> None:
     print(f"  wrote {path} ({os.path.getsize(path) // 1024} KB)")
 
 
-def capture(date: datetime.date, directory: str, only: str | None) -> None:
+def capture(date: datetime.date, directory: str, only: str | None, scoreboard_only: bool = False) -> None:
     board = requests.get(
         SCOREBOARD_URL, params={"dates": date.strftime("%Y%m%d")}, timeout=TIMEOUT_SECONDS
     )
     board.raise_for_status()
     body = board.json()
     _write(directory, f"scoreboard-{date.isoformat()}", prune_scoreboard(body))
+    if scoreboard_only:
+        return
 
     for event in body.get("events") or []:
         event_id = str(event.get("id"))
@@ -111,6 +126,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dates", nargs="+", help="slate dates, YYYY-MM-DD")
     parser.add_argument("--event", help="only capture this event's boxscore")
+    parser.add_argument("--scoreboard-only", action="store_true",
+                        help="skip the boxscores; enough for game context")
     args = parser.parse_args()
 
     directory = load_optional_env_var(EnvVarName.ESPN_FIXTURE_DIR)
@@ -122,7 +139,7 @@ def main() -> int:
     for raw in args.dates:
         date = datetime.date.fromisoformat(raw)
         print(f"{date}:")
-        capture(date, directory, args.event)
+        capture(date, directory, args.event, args.scoreboard_only)
     return 0
 
 

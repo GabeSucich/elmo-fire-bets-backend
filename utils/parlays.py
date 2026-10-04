@@ -33,6 +33,19 @@ def approved_veto(pick: Pick) -> PickVeto | None:
     return approved[0] if approved else None
 
 
+def apply_pick_result(pick: Pick, result: PickResult) -> None:
+    """Record a pick's result, and carry it onto an approved veto against it.
+
+    The one way a result is written, whether a person entered it or a final boxscore
+    settled it, so the veto's result can never disagree with the pick's. Pick.vetoes must
+    be loaded.
+    """
+    pick.result = result
+    for veto in pick.vetoes:
+        if veto.approval_status == VetoApprovalStatus.APPROVED:
+            veto.result = map_pick_result_to_veto_result(result)
+
+
 def leg_lost(pick: Pick, result: PickResult) -> bool:
     """Whether the leg that actually ran came in wrong.
 

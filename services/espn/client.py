@@ -90,6 +90,34 @@ def fetch_gamelog(athlete_id: str, season: int) -> Gamelog | None:
         return None
 
 
+def fetch_athlete_teams(athlete_id: str, season: int) -> dict[str, str] | None:
+    """Which team an athlete played for in each game of a season, by ESPN event id.
+
+    Postseason included — unlike Gamelog, which keeps to the regular season because its
+    week numbers restart. Here only the event id matters, and it does not.
+
+    The only reliable answer to which game a past pick was on. PropBetTarget.team_name is
+    the team a player is at *now*, so a traded player's old picks match the wrong game by
+    team, and on a Sunday that is usually a real game rather than none at all.
+    """
+    try:
+        response = requests.get(
+            GAMELOG_URL.format(athlete_id=athlete_id),
+            params={"season": season},
+            timeout=TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        events = response.json().get("events") or {}
+        return {
+            str(event_id): abbreviation
+            for event_id, meta in events.items()
+            if (abbreviation := ((meta or {}).get("team") or {}).get("abbreviation"))
+        }
+    except Exception:
+        logger.exception("gamelog fetch failed for athlete %s season %s", athlete_id, season)
+        return None
+
+
 def find_athlete_id(name: str) -> str | None:
     """ESPN's numeric athlete id, which the stats endpoints need.
 
@@ -180,6 +208,14 @@ def fetch_team_results(team_abbr: str, season: int) -> dict[int, float] | None:
 
 
 @dataclass(frozen=True)
+class GameSide:
+    """One team's half of a game: where it played and, once there is one, its score."""
+    abbreviation: str
+    is_home: bool
+    score: int | None
+
+
+@dataclass(frozen=True)
 class SlateGame:
     """One game on a slate, as far as a parlay needs to care."""
     event_id: str
@@ -192,6 +228,61 @@ class SlateGame:
     # Both teams, so a pick can be matched to its game by the abbreviation already stored
     # on its target.
     teams: frozenset[str]
+    # Everything below is context for pick assessments rather than for progress, and is
+    # optional throughout: a scoreboard that leaves any of it out is still a usable slate.
+    # Naive UTC, matching the timestamps the rest of the schema stores.
+    kickoff_at: datetime.datetime | None = None
+    week: int | None = None
+    indoor: bool | None = None
+    # London, Germany, Brazil and the like. One side is still listed as home there, and
+    # that label means nothing, so anything reading home or away has to check this first.
+    neutral_site: bool | None = None
+    sides: tuple[GameSide, ...] = ()
+    # Only published before kickoff — ESPN drops odds from a game once it is under way, so
+    # these are None for anything already played and can never be backfilled.
+    # From the home side's point of view: -3.0 means the home team is giving three.
+    home_spread: float | None = None
+    total: float | None = None
+    # "Mostly sunny, 68°F". Forecast, so only ever present on games yet to be played.
+    weather: str | None = None
+
+    def side(self, abbreviation: str) -> GameSide | None:
+        return next((s for s in self.sides if s.abbreviation == abbreviation), None)
+
+    def opponent_of(self, abbreviation: str) -> GameSide | None:
+        if self.side(abbreviation) is None:
+            return None
+        return next((s for s in self.sides if s.abbreviation != abbreviation), None)
+
+    def spread_for(self, abbreviation: str) -> float | None:
+        """The line from one team's point of view: negative when it is favoured."""
+        side = self.side(abbreviation)
+        if side is None or self.home_spread is None:
+            return None
+        return self.home_spread if side.is_home else -self.home_spread
+
+
+def _int_or_none(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _float_or_none(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _weather(event: dict) -> str | None:
+    weather = event.get("weather") or {}
+    described = weather.get("displayValue")
+    temperature = weather.get("temperature")
+    if described and temperature is not None:
+        return f"{described}, {temperature}\u00b0F"
+    return described or None
 
 
 def fetch_slate_games(date: datetime.date) -> list[SlateGame] | None:
@@ -221,15 +312,34 @@ def fetch_slate_games(date: datetime.date) -> list[SlateGame] | None:
                 continue
             competition = (event.get("competitions") or [{}])[0]
             status = (competition.get("status") or {}).get("type") or {}
-            teams = {
-                ((c.get("team") or {}).get("abbreviation") or "")
+            state = status.get("state") or "pre"
+            sides = tuple(
+                GameSide(
+                    abbreviation=abbreviation,
+                    is_home=c.get("homeAway") == "home",
+                    # ESPN sends "0" for a game that has not started, which is not a score.
+                    score=_int_or_none(c.get("score")) if state != "pre" else None,
+                )
                 for c in (competition.get("competitors") or [])
-            }
+                if (abbreviation := (c.get("team") or {}).get("abbreviation"))
+            )
+            venue = competition.get("venue") or {}
+            odds = (competition.get("odds") or [{}])[0]
             games.append(SlateGame(
                 event_id=str(event.get("id")),
-                state=status.get("state") or "pre",
+                state=state,
                 detail=status.get("shortDetail") or status.get("detail") or "",
-                teams=frozenset(t for t in teams if t),
+                teams=frozenset(s.abbreviation for s in sides),
+                kickoff_at=kickoff.astimezone(datetime.timezone.utc).replace(tzinfo=None),
+                week=_int_or_none((event.get("week") or {}).get("number")),
+                indoor=venue.get("indoor"),
+                neutral_site=competition.get("neutralSite"),
+                # Without homeAway the sides cannot be told apart, and a spread read from
+                # the wrong one is worse than none.
+                sides=sides if all(c.get("homeAway") for c in competition.get("competitors") or []) else (),
+                home_spread=_float_or_none(odds.get("spread")),
+                total=_float_or_none(odds.get("overUnder")),
+                weather=_weather(event),
             ))
         return games
     except Exception:

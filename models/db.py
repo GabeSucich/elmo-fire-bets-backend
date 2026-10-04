@@ -1,7 +1,8 @@
 import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Enum as SQLEnum, Integer, String, Text, UniqueConstraint, null
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Enum as SQLEnum, Index, Integer, String, Text, UniqueConstraint, null, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -86,6 +87,32 @@ class Pick(Base):
     live_detail: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     live_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
+    # The game this pick's player is playing in, from the ESPN scoreboard. Context for pick
+    # assessments, filled by services/espn/game_context. Every one is written once and then
+    # left alone — the schedule does not change, and an assessment hashes these, so a value
+    # that kept moving would keep invalidating it.
+    game_event_id: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
+    # The side the player was on in that game. Not the same as the target's team_name,
+    # which the player sync moves to wherever he plays now.
+    game_team: Mapped[str | None] = mapped_column(String(8), nullable=True, default=None)
+    game_kickoff_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    game_week: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    game_is_home: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
+    game_opponent: Mapped[str | None] = mapped_column(String(8), nullable=True, default=None)
+    game_indoor: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
+    # A neutral site still lists one side as home. Anything reading game_is_home checks this.
+    game_neutral_site: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
+    # Written once the game is final.
+    game_team_score: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    game_opponent_score: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    # The market around the game. ESPN publishes these only before kickoff, so they are
+    # refreshed until then and frozen after — the last value written is close to the
+    # closing line. Null on anything nobody touched before it was played: these cannot be
+    # backfilled. From this pick's team's side: negative means favoured.
+    game_team_spread: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    game_total: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    game_weather: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+
     gambler: Mapped["Gambler"] = relationship(back_populates="picks")
     vetoes: Mapped[list["PickVeto"]] = relationship(back_populates="pick", cascade="all, delete-orphan")
     parlay: Mapped["Parlay"] = relationship(back_populates="picks")
@@ -98,6 +125,11 @@ class Pick(Base):
     )
     comments: Mapped[list["PickComment"]] = relationship(
         back_populates="pick", cascade="all, delete-orphan"
+    )
+    # Left to the database rather than cascaded here, so it does not have to join the
+    # eager loads above: passive_deletes means the ORM never loads these to delete them.
+    assessments: Mapped[list["Assessment"]] = relationship(
+        back_populates="pick", passive_deletes=True
     )
 
 class PickVeto(Base):
@@ -175,6 +207,62 @@ class Parlay(Base):
     picks: Mapped[list[Pick]] = relationship(back_populates="parlay", cascade="all, delete-orphan")
     gambling_season: Mapped[GamblingSeason] = relationship(back_populates="parlays")
     owner: Mapped[Gambler] = relationship(back_populates="owned_parlays")
+    assessments: Mapped[list["Assessment"]] = relationship(
+        back_populates="parlay", passive_deletes=True
+    )
+
+
+# JSONB in Postgres, plain JSON wherever the tests build the schema in SQLite.
+JSONDocument = JSON().with_variant(JSONB(), "postgresql")
+
+
+class Assessment(Base):
+    """What the model had to say against one pick, or against a whole parlay.
+
+    A pick assessment has pick_id set; the parlay's own has it null. Rows are never
+    updated: each is the answer to one exact input, identified by input_hash, so a pick
+    changed and then changed back finds its old assessment again rather than paying for
+    a new one.
+
+    Two hashes, because they answer different questions. input_hash covers everything
+    the model was shown — the pick, the gambler's history, their trends — and decides
+    whether to call the model again. subject_hash covers only what was chosen (player,
+    prop, line, direction, sauce, veto) and decides whether to show it: another parlay
+    settling changes the history but not the pick, and should not hide an assessment of
+    a pick nobody touched.
+    """
+    __tablename__ = "assessments"
+    # Two partial indexes rather than one constraint, because a plain unique constraint
+    # treats every null pick_id as distinct and would never stop a duplicate parlay row.
+    __table_args__ = (
+        Index(
+            "uq_assessment_pick_input", "parlay_id", "pick_id", "input_hash",
+            unique=True, postgresql_where=text("pick_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_assessment_parlay_input", "parlay_id", "input_hash",
+            unique=True, postgresql_where=text("pick_id IS NULL"),
+        ),
+    )
+
+    parlay_id: Mapped[int] = mapped_column(ForeignKey("parlays.id", ondelete="CASCADE"), index=True)
+    pick_id: Mapped[int | None] = mapped_column(
+        ForeignKey("picks.id", ondelete="CASCADE"), nullable=True, default=None
+    )
+    subject_hash: Mapped[str] = mapped_column(String(64))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    # What the pick or slate looked like when assessed, so a stale assessment can say what
+    # it was about rather than simply vanishing.
+    subject_snapshot: Mapped[dict] = mapped_column(JSONDocument)
+    # Exactly what the model was sent. For working out why it said what it said.
+    input_json: Mapped[dict] = mapped_column(JSONDocument)
+    # [{"title": ..., "description": ...}]
+    suggestions: Mapped[list] = mapped_column(JSONDocument)
+    model: Mapped[str] = mapped_column(String(64))
+    prompt_version: Mapped[str] = mapped_column(String(32))
+
+    parlay: Mapped["Parlay"] = relationship(back_populates="assessments")
+    pick: Mapped["Pick | None"] = relationship(back_populates="assessments")
 
 
 

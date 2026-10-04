@@ -17,8 +17,8 @@ from models import (
     Parlay,
     PickResult,
     VetoResult,
-    VetoApprovalStatus
 )
+from utils.parlays import apply_pick_result
 
 from .auth import manager
 from .common import (
@@ -26,7 +26,6 @@ from .common import (
     build_pick_list_index_for_parlay,
     PropBetTargetRequestData,
     get_or_create_prop_bet_target,
-    map_pick_result_to_veto_result,
     query_pick_with_selects,
     check_user_access_to_parlay,
     check_season_in_progress,
@@ -259,11 +258,7 @@ async def update_pick_result(
         raise HTTPException(status_code=500, detail="Only the user can update results after a parlay has been closed!")
 
 
-    mapped_result = PickResult(body.result.value)
-    pick.result = mapped_result
-    for veto in pick.vetoes:
-        if veto.approval_status == VetoApprovalStatus.APPROVED:
-            veto.result = map_pick_result_to_veto_result(mapped_result)
+    apply_pick_result(pick, PickResult(body.result.value))
     
     await db.commit()
     pick = (await query_pick_with_selects(pick_id, db)).scalar_one()
