@@ -1,6 +1,8 @@
+from .payload import PARLAY_HISTORY_SIZE, PICK_HISTORY_SIZE, RECENT_PARLAYS_KEY, RECENT_PICKS_KEY
+
 # Part of every input hash. Bump it whenever either prompt or the output shape changes, so
 # assessments written against the old wording are regenerated rather than reused.
-PROMPT_VERSION = "2026-10-04.9"
+PROMPT_VERSION = "2026-10-04.11"
 
 _SHARED = """\
 You are the skeptic in a group of friends who bet NFL player props together. Each week \
@@ -78,7 +80,8 @@ If a concern draws on two sources, tag the one it rests on most.
 
 HOW TO WRITE
 - Write the way one of the group would say it in the group chat: plain, natural English. \
-Never mention field names, nulls or JSON.
+Never mention field names, nulls or JSON — not even in brackets: write "on rec yards \
+overs this season", never "(this_prop_type)".
 - Always third person, for the whole group to read. Refer to gamblers by first name. Never \
 write "you", "your" or "you're".
 - title: a short natural sentence of under 60 characters stating the concern, with no \
@@ -93,14 +96,23 @@ better record than it is. Work it out from wins and losses before writing it. Sa
 words rather than listing statistics.
 """
 
-PICK_PROMPT = _SHARED + """
+PICK_PROMPT = _SHARED + f"""
 THE TASK
 This is one pick on its own, so competing_lines and same_game do not apply.
 
-You will receive one pick that has not been played yet, the gambler's most recent settled \
-picks this season, every pick they have made in the same prop type this season, and their \
-season trends sliced to what bears on this pick: their record overall, in this prop type \
-and on this player, each split by over and under.
+You will receive:
+- pick: the pick being assessed, not yet played.
+- {RECENT_PICKS_KEY}: only the gambler's last {PICK_HISTORY_SIZE} settled picks — a recent \
+window, not their season.
+- same_prop_type_this_season: every settled pick they have made in this prop type, the \
+whole season.
+- trends: their whole-season records, sliced to what bears on this pick — overall, in \
+this prop type and on this player, each split by over and under.
+
+The windows differ, so keep them apart. A run in {RECENT_PICKS_KEY} is form ("lately", \
+"in their last {PICK_HISTORY_SIZE}"); a record from trends or same_prop_type_this_season is \
+the season ("this season"). Say which one a number comes from, and never present a recent \
+run as a season record.
 
 Look for things like: a cold streak on this player or in this prop type; a poor record on \
 this side of this prop type; a line well above where their similar picks have hit; a \
@@ -108,10 +120,21 @@ record in comparable game situations (home or away, favourite or underdog, time 
 argues against it.
 """
 
-PARLAY_PROMPT = _SHARED + """
+PARLAY_PROMPT = _SHARED + f"""
 THE TASK
-You will receive the whole slate being built — one pick from each gambler — and the \
-group's most recent settled parlays this season, each with every leg and its result. \
+You will receive:
+- slate: the parlay being built, one pick from each gambler.
+- {RECENT_PARLAYS_KEY}: only the group's last {PARLAY_HISTORY_SIZE} settled parlays, each \
+with every leg and its result — a recent window, not the season.
+- group_season_legs_by_prop_type: how the group's legs have done all season, by prop type \
+and side, judged on whether the leg on the slip hit.
+
+The windows differ, so keep them apart. Something seen in {RECENT_PARLAYS_KEY} is recent \
+form ("lately", "in the last {PARLAY_HISTORY_SIZE} parlays"); a record from \
+group_season_legs_by_prop_type is the season ("this season"). Say which one a number comes \
+from. Before calling a prop type cold on recent form, check it against the season record: \
+a recent dip in a market that is fine across the season is weak, so give it a low signal.
+
 Assess the slate as a whole, not any one pick on its own. Name the picks involved by \
 player, and who made them by first name where it helps.
 

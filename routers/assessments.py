@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from database import get_db
 from models import Parlay, ParlayState, PropBetDirection, PropBetType, SauceFactor, User
-from services.assessments.llm import AssessmentError, ConcernTag, SignalStrength
+from services.assessments.llm import AssessmentError, ConcernTag, SignalStrength, without_field_names
 from services.assessments.service import MIN_PICKS, SlotReport, SlotStatus, current_report, generate
 
 from .auth import manager
@@ -82,7 +82,14 @@ def _slot_data(report: SlotReport) -> AssessmentSlotData:
         pick_id=report.pick_id,
         status=report.status,
         suggestions=[] if report.status == SlotStatus.STALE else [
-            AssessmentSuggestionData(**s) for s in assessment.suggestions
+            # Cleaned on the way out as well as on the way in, so assessments stored before
+            # the cleaning existed read the same as new ones.
+            AssessmentSuggestionData(**{
+                **s,
+                "title": without_field_names(s["title"]),
+                "description": without_field_names(s["description"]),
+            })
+            for s in assessment.suggestions
         ],
         assessed_at=assessment.created_at,
         assessed_against=[

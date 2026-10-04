@@ -17,9 +17,13 @@ from models import Parlay, ParlayState, Pick, PickResult, PropBetDirection, Slat
 from services.metric_calculator import GamblerMetricsCalculator, SetMetrics
 from utils.parlays import approved_veto, leg_lost
 
-# How far back each assessment looks. Current season only, by decision.
-PICK_HISTORY_SIZE = 10
-PARLAY_HISTORY_SIZE = 10
+# How far back the recent windows look. Current season only, by decision. Everything else
+# the model sees — same-prop-type picks, trends, the group's records — is the whole season,
+# and the payload keys and the prompt both say which is which.
+PICK_HISTORY_SIZE = 15
+PARLAY_HISTORY_SIZE = 15
+RECENT_PICKS_KEY = f"last_{PICK_HISTORY_SIZE}_picks"
+RECENT_PARLAYS_KEY = f"last_{PARLAY_HISTORY_SIZE}_parlays"
 
 EASTERN = zoneinfo.ZoneInfo("America/New_York")
 
@@ -229,8 +233,8 @@ def pick_input(pick: Pick, parlay: Parlay, season_parlays: list[Parlay]) -> dict
     ]
     return {
         "pick": pick_row(pick, parlay, with_outcome=False),
-        "recent_picks": [pick_row(p, prior, True) for p, prior in gambler_picks[:PICK_HISTORY_SIZE]],
-        # Ten picks cannot say anything about one market, so every one of them this season.
+        RECENT_PICKS_KEY: [pick_row(p, prior, True) for p, prior in gambler_picks[:PICK_HISTORY_SIZE]],
+        # A recent window cannot say anything about one market, so every one this season.
         "same_prop_type_this_season": [
             pick_row(p, prior, True) for p, prior in gambler_picks if p.prop_type == pick.prop_type
         ],
@@ -251,6 +255,29 @@ def parlay_subject(parlay: Parlay) -> dict[str, Any]:
     }
 
 
+def group_season_records(parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]:
+    """How the group's legs have done this season, by prop type and side.
+
+    Judged on leg_hit — the leg that actually went on the slip — since this is about what
+    sinks parlays, not who called what. Lets a claim about a market be checked against the
+    season rather than resting on the last few parlays alone.
+    """
+    tallies: dict[str, dict[str, list[int]]] = {}
+    for prior in settled(season_parlays, parlay):
+        for pick in prior.picks:
+            hit = leg_hit(pick)
+            if hit is None:
+                continue
+            sides = tallies.setdefault(pick.prop_type.value, {})
+            for side in ("all", played_direction(pick).value.lower() + "s"):
+                hits, decided = sides.setdefault(side, [0, 0])
+                sides[side] = [hits + int(hit), decided + 1]
+    return {
+        prop_type: {side: f"{hits}/{decided}" for side, (hits, decided) in sorted(sides.items())}
+        for prop_type, sides in sorted(tallies.items())
+    }
+
+
 def parlay_input(parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]:
     return {
         "slate": {
@@ -258,7 +285,7 @@ def parlay_input(parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]
             "date": parlay.competition_date.isoformat(),
             "picks": [pick_row(p, parlay, with_outcome=False) for p in _ordered(parlay.picks)],
         },
-        "recent_parlays": [
+        RECENT_PARLAYS_KEY: [
             {
                 "slate_type": prior.slate_type.value,
                 "date": prior.competition_date.isoformat(),
@@ -267,6 +294,7 @@ def parlay_input(parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]
             }
             for prior in settled(season_parlays, parlay)[:PARLAY_HISTORY_SIZE]
         ],
+        "group_season_legs_by_prop_type": group_season_records(parlay, season_parlays),
     }
 
 

@@ -122,7 +122,7 @@ async def test_the_model_sees_the_game_and_the_settled_history(session, world, m
     # HOU @ TEN on the 10/11 fixture, HOU -6.5.
     assert pick_input["pick"]["game"]["venue"] == "away"
     assert pick_input["pick"]["game"]["team_spread"] == -6.5
-    assert [r["call_result"] for r in pick_input["recent_picks"]] == ["Loss"]
+    assert [r["call_result"] for r in pick_input[payload.RECENT_PICKS_KEY]] == ["Loss"]
     assert pick_input["trends"]["this_player"]["overall"]["losses"] == 1
 
 
@@ -208,3 +208,14 @@ async def test_concerns_come_back_strongest_first(monkeypatch):
     monkeypatch.setattr(llm, "get_client", lambda: SimpleNamespace(responses=Responses()))
     ranked = await llm.assess_pick({})
     assert [s.signal for s in ranked] == [SignalStrength.HIGH, SignalStrength.MEDIUM, SignalStrength.LOW]
+
+
+def test_field_names_are_cut_from_what_the_model_wrote():
+    from services.assessments.llm import without_field_names
+    assert without_field_names(
+        "Mark is 10/24 on passing-ints overs (this_prop_type this season), so it has been losing."
+    ) == "Mark is 10/24 on passing-ints overs, so it has been losing."
+    assert without_field_names("Spicy picks are 15/35 this season (trends spicy_picks).") == \
+        "Spicy picks are 15/35 this season."
+    # An ordinary aside stays.
+    assert without_field_names("Jason is 7/20 (a big sample).") == "Jason is 7/20 (a big sample)."
