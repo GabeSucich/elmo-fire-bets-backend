@@ -20,6 +20,7 @@ from models import Assessment, Gambler, Parlay, Pick
 from services.espn.game_context import fill_game_context
 
 from . import payload as p
+from .flavor import assign_sayings
 from .hashing import content_hash
 from .llm import ASSESSMENT_MODEL, Suggestion, assess_parlay, assess_pick
 from .prompts import PROMPT_VERSION
@@ -156,8 +157,13 @@ async def generate(parlay_id: int, db: AsyncSession) -> tuple[Parlay, list[SlotR
     await db.commit()
 
     if needed:
+        sayings = assign_sayings(parlay.id, parlay.order, [s.pick_id for s in slots])
         results = await asyncio.gather(
-            *[assess_pick(s.input) if s.pick else assess_parlay(s.input) for s in needed],
+            *[
+                assess_pick(s.input, sayings.get(s.pick_id)) if s.pick
+                else assess_parlay(s.input, sayings.get(s.pick_id))
+                for s in needed
+            ],
             return_exceptions=True,
         )
         failures = []

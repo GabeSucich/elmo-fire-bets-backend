@@ -7,12 +7,13 @@ from pydantic import BaseModel, Field
 
 from services.correction_analysis.client import get_client
 
-from .prompts import PARLAY_PROMPT, PICK_PROMPT
+from .flavor import flavor_for
+from .prompts import MULTI_GAME_SLATES, PARLAY_PROMPT, PICK_PROMPT
 
-# Mini for the same reasons as correction analysis. Low effort rather than minimal: this
-# is reading records for patterns rather than lifting text off a slip.
-ASSESSMENT_MODEL = "gpt-5-mini"
-REASONING_EFFORT = "low"
+# Not mini: at low effort it kept miscounting the one-in-three bar, raising winning records
+# over their BOZOs and leaking banned stock words, however the prompt put it.
+ASSESSMENT_MODEL = "gpt-5.6-luna"
+REASONING_EFFORT = "medium"
 
 
 # A bracketed aside that names a payload field — "(this_prop_type)", "(trends
@@ -61,12 +62,14 @@ class AssessmentResult(BaseModel):
     suggestions: list[Suggestion] = Field(default_factory=list)
 
 
-async def _assess(prompt: str, payload: dict[str, Any]) -> list[Suggestion]:
+async def _assess(
+    prompt: str, payload: dict[str, Any], saying: tuple[str, str] | None, drop: set[ConcernTag] = frozenset(),
+) -> list[Suggestion]:
     response = await get_client().responses.parse(
         model=ASSESSMENT_MODEL,
         reasoning={"effort": REASONING_EFFORT},
         input=[
-            {"role": "system", "content": prompt},
+            {"role": "system", "content": prompt + "\n" + flavor_for(payload, saying)},
             {"role": "user", "content": json.dumps(payload, separators=(",", ":"))},
         ],
         text_format=AssessmentResult,
@@ -75,7 +78,8 @@ async def _assess(prompt: str, payload: dict[str, Any]) -> list[Suggestion]:
         raise AssessmentError("The model did not return an assessment.")
     # Strongest first, whatever order the model wrote them in. Stable, so concerns of equal
     # strength keep the model's own ranking.
-    ranked = sorted(response.output_parsed.suggestions, key=lambda s: SIGNAL_ORDER[s.signal])
+    kept = [s for s in response.output_parsed.suggestions if s.tag not in drop]
+    ranked = sorted(kept, key=lambda s: SIGNAL_ORDER[s.signal])
     return [
         s.model_copy(update={
             "title": without_field_names(s.title),
@@ -85,9 +89,12 @@ async def _assess(prompt: str, payload: dict[str, Any]) -> list[Suggestion]:
     ]
 
 
-async def assess_pick(payload: dict[str, Any]) -> list[Suggestion]:
-    return await _assess(PICK_PROMPT, payload)
+async def assess_pick(payload: dict[str, Any], saying: tuple[str, str] | None = None) -> list[Suggestion]:
+    return await _assess(PICK_PROMPT, payload, saying)
 
 
-async def assess_parlay(payload: dict[str, Any]) -> list[Suggestion]:
-    return await _assess(PARLAY_PROMPT, payload)
+async def assess_parlay(payload: dict[str, Any], saying: tuple[str, str] | None = None) -> list[Suggestion]:
+    # A single-game slate is all one game by definition, and the model raised it anyway on
+    # nearly every one. The prompt forbids it; this catches what still gets through.
+    multi_game = payload["slate"]["slate_type"] in MULTI_GAME_SLATES
+    return await _assess(PARLAY_PROMPT, payload, saying, drop=set() if multi_game else {ConcernTag.SAME_GAME})

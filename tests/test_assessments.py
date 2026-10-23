@@ -41,7 +41,7 @@ async def session():
 def model_calls(monkeypatch):
     calls = []
 
-    async def fake(payload):
+    async def fake(payload, saying=None):
         calls.append(payload)
         return [Suggestion(title="Cold on this", description="1/4.", signal=SignalStrength.MEDIUM, tag=ConcernTag.PAST_TREND)]
 
@@ -121,7 +121,7 @@ async def test_the_model_sees_the_game_and_the_settled_history(session, world, m
 
     # HOU @ TEN on the 10/11 fixture, HOU -6.5.
     assert pick_input["pick"]["game"]["venue"] == "away"
-    assert pick_input["pick"]["game"]["team_spread"] == -6.5
+    assert pick_input["pick"]["game"]["spread"] == "HOU -6.5: HOU favored by 6.5 over TEN"
     assert [r["call_result"] for r in pick_input[payload.RECENT_PICKS_KEY]] == ["Loss"]
     assert pick_input["trends"]["this_player"]["overall"]["losses"] == 1
 

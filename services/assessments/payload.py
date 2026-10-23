@@ -30,7 +30,30 @@ EASTERN = zoneinfo.ZoneInfo("America/New_York")
 # The fields of the pick being assessed that move until kickoff. They go to the model but
 # are kept out of both hashes, or a line moving half a point would invalidate the
 # assessment of a pick nobody touched.
-VOLATILE_GAME_FIELDS = ("team_spread", "game_total", "weather")
+VOLATILE_GAME_FIELDS = ("spread", "game_total", "weather", "total_bucket", "spread_bucket")
+
+# How past games are grouped when the model is shown a record by game situation. Fixed
+# buckets rather than ranges around this game's numbers, so the records depend on history
+# alone and a line moving before kickoff changes nothing the model is shown about the past.
+LOW_TOTAL_MAX = 42.5
+HIGH_TOTAL_MIN = 48.0
+CLOSE_SPREAD_MAX = 3.0
+
+
+def total_bucket(total: float | None) -> str | None:
+    if total is None:
+        return None
+    if total <= LOW_TOTAL_MAX:
+        return "low"
+    return "high" if total >= HIGH_TOTAL_MIN else "mid"
+
+
+def spread_bucket(team_spread: float | None) -> str | None:
+    if team_spread is None:
+        return None
+    if abs(team_spread) <= CLOSE_SPREAD_MAX:
+        return "close"
+    return "favorite" if team_spread < 0 else "underdog"
 
 
 def played_direction(pick: Pick) -> PropBetDirection:
@@ -70,6 +93,29 @@ def _kickoff(kickoff_at: datetime.datetime | None) -> str | None:
     return local.strftime("%a %-I:%M %p ET")
 
 
+def _points(value: float) -> str:
+    return f"{value:g}"
+
+
+def spread_text(team: str | None, opponent: str | None, team_spread: float | None) -> str | None:
+    """'JAX +7.5: JAX are 7.5-point underdogs, PHI favored by 7.5'.
+
+    Spelled out because the model, given the bare number from the pick's own side, kept
+    getting the sign backwards — and two legs in one game carry opposite signs, so it
+    called both teams the favorite on the same slate.
+    """
+    if team_spread is None or team is None:
+        return None
+    if team_spread == 0:
+        return f"{team} pick'em: neither side favored"
+    points = _points(abs(team_spread))
+    signed = f"{team} {'-' if team_spread < 0 else '+'}{points}"
+    other = opponent or "the opponent"
+    if team_spread < 0:
+        return f"{signed}: {team} favored by {points} over {other}"
+    return f"{signed}: {team} are {points}-point underdogs, {other} favored by {points}"
+
+
 def game_context(pick: Pick) -> dict[str, Any] | None:
     if pick.game_event_id is None:
         return None
@@ -104,8 +150,12 @@ def game_context(pick: Pick) -> dict[str, Any] | None:
         "venue": venue,
         "opponent": pick.game_opponent,
         "indoor": pick.game_indoor,
-        "team_spread": pick.game_team_spread,
+        "spread": spread_text(team, opponent, pick.game_team_spread),
         "game_total": pick.game_total,
+        # Which of the by-game-situation buckets this game is in, so the model reads the
+        # right record instead of placing 41.5 itself — it called that "mid".
+        "total_bucket": total_bucket(pick.game_total),
+        "spread_bucket": spread_bucket(pick.game_team_spread),
         "weather": pick.game_weather,
         "final_score": final,
     }
@@ -177,13 +227,70 @@ def _record(metrics: SetMetrics | None) -> dict[str, Any] | None:
         return None
     record = metrics.model_dump(include={
         "total", "wins", "losses", "pushes", "voids", "bozos", "win_rate",
-        "curr_win_streak", "curr_loss_streak",
+        "curr_win_streak", "curr_loss_streak", "curr_bozo_streak",
     })
     # Worked out here rather than left to the model, which divided by total — voids and
     # pushes included — and once wrote wins over losses as if it were a record.
     record["decided"] = metrics.total - metrics.pushes - metrics.voids
     record["record"] = f"{metrics.wins}/{record['decided']}"
     return record
+
+
+def _situations(rows: list[tuple[Pick, bool]]) -> dict[str, dict[str, str]] | None:
+    """Hits over decided picks in each kind of game: by total, by spread and by venue.
+
+    Each row is a past pick with whether it hit. Every bucket that has a decided pick is
+    listed, not only the one this game falls in, so the model reads which applies from the
+    game it is shown — see total_bucket for why.
+    """
+    groups: dict[str, dict[str, list[int]]] = {}
+    for pick, hit in rows:
+        for name, bucket in (
+            ("by_game_total", total_bucket(pick.game_total)),
+            ("by_spread", spread_bucket(pick.game_team_spread)),
+            ("by_venue", None if pick.game_neutral_site or pick.game_is_home is None
+                else "home" if pick.game_is_home else "away"),
+        ):
+            if bucket is None:
+                continue
+            hits, decided = groups.setdefault(name, {}).setdefault(bucket, [0, 0])
+            groups[name][bucket] = [hits + int(hit), decided + 1]
+    if not groups:
+        return None
+    return {
+        name: {bucket: f"{hits}/{decided}" for bucket, (hits, decided) in sorted(buckets.items())}
+        for name, buckets in sorted(groups.items())
+    }
+
+
+def call_hit(pick: Pick) -> bool | None:
+    """Whether the gambler's own call was right. Void and push are neither."""
+    if pick.result == PickResult.WIN:
+        return True
+    if pick.result in (PickResult.LOSS, PickResult.BOZO):
+        return False
+    return None
+
+
+def gambler_situations(pick: Pick, parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]:
+    """This gambler's calls on this pick's side, by game situation, this season.
+
+    Both within this prop type and across every prop type — "Jason's overs in low-total
+    games" is the history the model should weigh, rather than reasoning that a low total
+    is bad for an over on its own.
+    """
+    side = pick.direction
+    calls = [
+        (p, hit)
+        for prior in settled(season_parlays, parlay)
+        for p in prior.picks
+        if p.gambler_id == pick.gambler_id and p.direction == side and (hit := call_hit(p)) is not None
+    ]
+    label = side.value.lower() + "s"
+    return {
+        f"this_prop_type_{label}": _situations([(p, h) for p, h in calls if p.prop_type == pick.prop_type]),
+        f"all_{label}": _situations(calls),
+    }
 
 
 def trends(pick: Pick, parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]:
@@ -239,6 +346,7 @@ def pick_input(pick: Pick, parlay: Parlay, season_parlays: list[Parlay]) -> dict
             pick_row(p, prior, True) for p, prior in gambler_picks if p.prop_type == pick.prop_type
         ],
         "trends": trends(pick, parlay, season_parlays),
+        "by_game_situation_this_season": gambler_situations(pick, parlay, season_parlays),
     }
 
 
@@ -278,6 +386,18 @@ def group_season_records(parlay: Parlay, season_parlays: list[Parlay]) -> dict[s
     }
 
 
+def group_season_situations(parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]:
+    """How the group's legs have done this season by game situation, overs and unders apart."""
+    legs: dict[str, list[tuple[Pick, bool]]] = {}
+    for prior in settled(season_parlays, parlay):
+        for pick in prior.picks:
+            hit = leg_hit(pick)
+            if hit is None:
+                continue
+            legs.setdefault(played_direction(pick).value.lower() + "s", []).append((pick, hit))
+    return {side: _situations(rows) for side, rows in sorted(legs.items())}
+
+
 def parlay_input(parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]:
     return {
         "slate": {
@@ -295,6 +415,7 @@ def parlay_input(parlay: Parlay, season_parlays: list[Parlay]) -> dict[str, Any]
             for prior in settled(season_parlays, parlay)[:PARLAY_HISTORY_SIZE]
         ],
         "group_season_legs_by_prop_type": group_season_records(parlay, season_parlays),
+        "group_season_legs_by_game_situation": group_season_situations(parlay, season_parlays),
     }
 
 
